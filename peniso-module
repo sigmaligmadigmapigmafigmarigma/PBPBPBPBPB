@@ -43,7 +43,6 @@ function RageModule.new(config)
 	-- Rapidfire
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 5
-	self.RF_BURST_DELAY = 0.03
 
 	-- Internal state
 	self.lastShot = 0
@@ -671,9 +670,7 @@ function RageModule:Start()
 
 		local currentTime = tick()
 
-		if self.RAPIDFIRE_ENABLED then
-			if currentTime - self.lastShot < self.RF_BURST_DELAY then return end
-		else
+		if not self.RAPIDFIRE_ENABLED then
 			if currentTime - self.lastShot < gun.fireRate then return end
 		end
 
@@ -710,44 +707,36 @@ function RageModule:Start()
 		if self.RAPIDFIRE_ENABLED then
 			self.lastShot = currentTime
 			local shots = math.floor(self.RAPIDFIRE_SHOTS)
-			task.spawn(function()
-				local allTargets = self:FindAllTargets()
-				local tIdx = 1
+			local allTargets = self:FindAllTargets()
 
+			if #allTargets == 0 then
+				local tPos = self.PREDICTION_ENABLED
+					and self:PredictPosition(target.targetPart, target.rootPart)
+					or target.targetPart.Position
 				for i = 1, shots do
-					if not self:IsAlive() then break end
-
-					while tIdx <= #allTargets do
-						local t = allTargets[tIdx]
-						if t.humanoid and t.humanoid.Health > 0
-							and t.rootPart and t.rootPart.Parent then
-							break
-						end
-						tIdx = tIdx + 1
-					end
-
-					if tIdx > #allTargets then
-						allTargets = self:FindAllTargets()
-						tIdx = 1
-						if #allTargets == 0 then break end
-					end
-
-					local cur = allTargets[tIdx]
-					local g = self:GetGun()
-					if not g then break end
-
-					local tPos = self.PREDICTION_ENABLED
-						and self:PredictPosition(cur.targetPart, cur.rootPart)
-						or cur.targetPart.Position
-					self:FireWeapon(g, tPos, cur)
-
-					if i < shots then task.wait() end
-
-					if cur.humanoid and cur.humanoid.Health <= 0 then
-						tIdx = tIdx + 1
-					end
+					self:FireWeapon(gun, tPos, target)
 				end
-			end)
+				return
+			end
+
+			local tIdx = 1
+			for i = 1, shots do
+				while tIdx <= #allTargets do
+					local t = allTargets[tIdx]
+					if t.humanoid and t.humanoid.Health > 0
+						and t.rootPart and t.rootPart.Parent then
+						break
+					end
+					tIdx = tIdx + 1
+				end
+				if tIdx > #allTargets then break end
+
+				local cur = allTargets[tIdx]
+				local tPos = self.PREDICTION_ENABLED
+					and self:PredictPosition(cur.targetPart, cur.rootPart)
+					or cur.targetPart.Position
+				self:FireWeapon(gun, tPos, cur)
+			end
 			return
 		end
 

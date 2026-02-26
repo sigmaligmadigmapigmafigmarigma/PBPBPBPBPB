@@ -704,48 +704,61 @@ function RageModule:Start()
 			return
 		end
 
-		if self.RAPIDFIRE_ENABLED then
-			self.lastShot = currentTime
-			local shots = math.floor(self.RAPIDFIRE_SHOTS)
-			local allTargets = self:FindAllTargets()
-
-			if #allTargets == 0 then
-				local tPos = self.PREDICTION_ENABLED
-					and self:PredictPosition(target.targetPart, target.rootPart)
-					or target.targetPart.Position
-				for i = 1, shots do
-					self:FireWeapon(gun, tPos, target)
-				end
-				return
-			end
-
-			local tIdx = 1
-			for i = 1, shots do
-				while tIdx <= #allTargets do
-					local t = allTargets[tIdx]
-					if t.humanoid and t.humanoid.Health > 0
-						and t.rootPart and t.rootPart.Parent then
-						break
-					end
-					tIdx = tIdx + 1
-				end
-				if tIdx > #allTargets then break end
-
-				local cur = allTargets[tIdx]
-				local tPos = self.PREDICTION_ENABLED
-					and self:PredictPosition(cur.targetPart, cur.rootPart)
-					or cur.targetPart.Position
-				self:FireWeapon(gun, tPos, cur)
-			end
-			return
-		end
+		local char = self.player.Character
+		local head = char and char:FindFirstChild("Head")
+		if not head then return end
 
 		local targetPos = self.PREDICTION_ENABLED
 			and self:PredictPosition(target.targetPart, target.rootPart)
 			or target.targetPart.Position
 
-		if self:FireWeapon(gun, targetPos, target) then
+		if gun.type == "AWP" then
+			local origin = head.Position
+			local dirVec = targetPos - origin
+			if dirVec.Magnitude < 0.01 then return end
+			local direction = dirVec.Unit
+
+			pcall(function()
+				gun.fireShot:FireServer(origin, direction, target.targetPart)
+			end)
 			self.lastShot = currentTime
+			task.defer(function()
+				self.Visuals:CreateTracer(origin, targetPos)
+			end)
+
+			if self.RAPIDFIRE_ENABLED then
+				local extra = math.floor(self.RAPIDFIRE_SHOTS) - 1
+				for i = 1, extra do
+					pcall(function()
+						gun.fireShot:FireServer(origin, direction, target.targetPart)
+					end)
+				end
+			end
+
+		elseif gun.type == "CastRay" then
+			if not gun.hole or not gun.hole.Parent then return end
+			local origin = gun.hole.Position
+			local dirVec = targetPos - origin
+			if dirVec.Magnitude < 0.01 then return end
+			local direction = dirVec.Unit
+			local ray = Ray.new(origin, direction * 1000)
+
+			pcall(function()
+				gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
+			end)
+			self.lastShot = currentTime
+			task.defer(function()
+				self.Visuals:CreateTracer(origin, targetPos)
+			end)
+
+			if self.RAPIDFIRE_ENABLED then
+				local extra = math.floor(self.RAPIDFIRE_SHOTS) - 1
+				for i = 1, extra do
+					pcall(function()
+						gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
+					end)
+				end
+			end
 		end
 	end)
 end
@@ -827,6 +840,14 @@ end
 
 function RageModule:SetRapidfireEnabled(value)
 	self.RAPIDFIRE_ENABLED = value
+	if value then
+		self.Notification:Notify({
+			Title = "Rapidfire",
+			Content = "Enabled — " .. self.RAPIDFIRE_SHOTS .. " shots per tick",
+			Icon = "info",
+			Duration = 3
+		})
+	end
 end
 
 function RageModule:SetRapidfireShots(value)

@@ -499,6 +499,61 @@ function RageModule:FireWeapon(gun, targetPos, target)
 end
 
 -- ============================================
+-- MULTI-TARGET (RAPIDFIRE)
+-- ============================================
+function RageModule:FindAllTargets()
+	if not self:IsAlive() then return {} end
+
+	local char = self.player.Character
+	local myHead = char and char:FindFirstChild("Head")
+	if not myHead then return {} end
+
+	local now = tick()
+	if now - self.lastPlayerListUpdate >= self.PLAYER_LIST_UPDATE_RATE then
+		self.lastPlayerListUpdate = now
+		self:UpdateActivePlayersList()
+	end
+
+	local targets = {}
+
+	for _, data in ipairs(self.activePlayers) do
+		if not data.humanoid or data.humanoid.Health <= 0 then continue end
+		if not data.rootPart or not data.rootPart.Parent then continue end
+
+		local dist = (data.rootPart.Position - myHead.Position).Magnitude
+		if dist > self.MAX_DISTANCE then continue end
+
+		local visible = false
+		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}) do
+			local p = data.character:FindFirstChild(partName)
+			if p and self:IsPartVisible(p, data.character) then
+				visible = true
+				break
+			end
+		end
+		if not visible then continue end
+
+		local part = self:GetTargetPart(data.character, dist)
+		if not part then
+			part = data.character:FindFirstChild("Head") or data.rootPart
+		end
+		if not part then continue end
+
+		table.insert(targets, {
+			player = data.player,
+			character = data.character,
+			targetPart = part,
+			rootPart = data.rootPart,
+			humanoid = data.humanoid,
+			distance = dist
+		})
+	end
+
+	table.sort(targets, function(a, b) return a.distance < b.distance end)
+	return targets
+end
+
+-- ============================================
 -- DOUBLE TAP
 -- ============================================
 function RageModule:FindNearestEnemy()
@@ -656,15 +711,41 @@ function RageModule:Start()
 			self.lastShot = currentTime
 			local shots = math.floor(self.RAPIDFIRE_SHOTS)
 			task.spawn(function()
+				local allTargets = self:FindAllTargets()
+				local tIdx = 1
+
 				for i = 1, shots do
 					if not self:IsAlive() then break end
+
+					while tIdx <= #allTargets do
+						local t = allTargets[tIdx]
+						if t.humanoid and t.humanoid.Health > 0
+							and t.rootPart and t.rootPart.Parent then
+							break
+						end
+						tIdx = tIdx + 1
+					end
+
+					if tIdx > #allTargets then
+						allTargets = self:FindAllTargets()
+						tIdx = 1
+						if #allTargets == 0 then break end
+					end
+
+					local cur = allTargets[tIdx]
 					local g = self:GetGun()
 					if not g then break end
+
 					local tPos = self.PREDICTION_ENABLED
-						and self:PredictPosition(target.targetPart, target.rootPart)
-						or target.targetPart.Position
-					self:FireWeapon(g, tPos, target)
+						and self:PredictPosition(cur.targetPart, cur.rootPart)
+						or cur.targetPart.Position
+					self:FireWeapon(g, tPos, cur)
+
 					if i < shots then task.wait() end
+
+					if cur.humanoid and cur.humanoid.Health <= 0 then
+						tIdx = tIdx + 1
+					end
 				end
 			end)
 			return

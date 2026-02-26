@@ -1,3 +1,8 @@
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║            ARCANUM NEXTGEN  •  ESP MODULE                  ║
+-- ║          Drawing API  •  Highlight Chams  •  Backtrack     ║
+-- ╚══════════════════════════════════════════════════════════════╝
+
 local ESPModule = {}
 ESPModule.__index = ESPModule
 
@@ -79,6 +84,8 @@ function ESPModule.new(config)
 
     self.HEALTH_ENABLED = true
     self.HEALTH_GRADIENT = true
+    self.HEALTH_LOW_COLOR = Color3.fromRGB(255, 50, 50)
+    self.HEALTH_HIGH_COLOR = Color3.fromRGB(80, 255, 80)
 
     self.NAME_ENABLED = true
     self.NAME_COLOR = Color3.new(1,1,1)
@@ -132,6 +139,8 @@ function ESPModule:SetBoxFillTransparency(v) self.BOX_FILL_TRANSPARENCY = v end
 
 function ESPModule:SetHealthEnabled(v)      self.HEALTH_ENABLED = v end
 function ESPModule:SetHealthGradient(v)     self.HEALTH_GRADIENT = v end
+function ESPModule:SetHealthLowColor(v)     self.HEALTH_LOW_COLOR = v end
+function ESPModule:SetHealthHighColor(v)    self.HEALTH_HIGH_COLOR = v end
 
 function ESPModule:SetNameEnabled(v)        self.NAME_ENABLED = v end
 function ESPModule:SetNameColor(v)          self.NAME_COLOR = v end
@@ -180,10 +189,13 @@ end
 
 function ESPModule:GetHealthColor(ratio)
     ratio = math.clamp(ratio, 0, 1)
-    if ratio > 0.5 then
-        return Color3.new(1 - (ratio - 0.5) * 2, 1, 0)
-    end
-    return Color3.new(1, ratio * 2, 0)
+    local lo = self.HEALTH_LOW_COLOR
+    local hi = self.HEALTH_HIGH_COLOR
+    return Color3.new(
+        lo.R + (hi.R - lo.R) * ratio,
+        lo.G + (hi.G - lo.G) * ratio,
+        lo.B + (hi.B - lo.B) * ratio
+    )
 end
 
 function ESPModule:GetBoundingBox(char)
@@ -238,14 +250,15 @@ function ESPModule:CreateData()
         tracer = newLine(),
         bones = {},
         highlight = nil,
-        btBoxes = {},
+        btGhost = nil,
+        btHighlight = nil,
+        btGhostTime = 0,
         btHistory = {},
         btLastRecord = 0,
     }
 
     for i = 1, 8 do d.corners[i] = newLine() end
     for i = 1, 14 do d.bones[i] = newLine() end
-    for i = 1, MAX_BT do d.btBoxes[i] = newSquare(false) end
 
     return d
 end
@@ -260,7 +273,8 @@ function ESPModule:DestroyData(plr)
     rem(d.nameText); rem(d.distText); rem(d.weaponText)
     rem(d.tracer)
     for _, l in ipairs(d.bones) do rem(l) end
-    for _, s in ipairs(d.btBoxes) do rem(s) end
+    if d.btGhost then pcall(function() d.btGhost:Destroy() end) end
+    if d.btHighlight then pcall(function() d.btHighlight:Destroy() end) end
     if d.highlight then pcall(function() d.highlight:Destroy() end) end
 
     self._data[plr] = nil
@@ -276,7 +290,8 @@ function ESPModule:HideAll(d)
     hide(d.nameText); hide(d.distText); hide(d.weaponText)
     hide(d.tracer)
     for _, l in ipairs(d.bones) do hide(l) end
-    for _, s in ipairs(d.btBoxes) do hide(s) end
+    if d.btGhost then d.btGhost.Parent = nil end
+    if d.btHighlight then d.btHighlight.Enabled = false end
     if d.highlight then d.highlight.Enabled = false end
 end
 
@@ -365,7 +380,7 @@ function ESPModule:UpdateHealth(d, bb, hum)
         local fh = h * ratio
         d.healthFill.Position = Vector2.new(x, y + h - fh)
         d.healthFill.Size = Vector2.new(barW, fh)
-        d.healthFill.Color = self.HEALTH_GRADIENT and self:GetHealthColor(ratio) or Color3.fromRGB(80, 255, 80)
+        d.healthFill.Color = self.HEALTH_GRADIENT and self:GetHealthColor(ratio) or self.HEALTH_HIGH_COLOR
         d.healthFill.Transparency = 0
         d.healthFill.Visible = true
     end
@@ -529,16 +544,39 @@ function ESPModule:UpdateChams(d, char, targetPlayer)
     hl.Enabled = true
 end
 
-function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
-    if not hasDrawing then return end
+function ESPModule:CreateGhost(char)
+    local ok, ghost = pcall(function()
+        local g = char:Clone()
+        for _, v in ipairs(g:GetDescendants()) do
+            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript")
+                or v:IsA("Sound") or v:IsA("ParticleEmitter") or v:IsA("BillboardGui")
+                or v:IsA("ProximityPrompt") or v:IsA("Decal") then
+                v:Destroy()
+            elseif v:IsA("BasePart") then
+                v.CanCollide = false
+                v.Anchored = true
+                v.Transparency = 1
+            end
+        end
+        local hum = g:FindFirstChildOfClass("Humanoid")
+        if hum then hum:Destroy() end
+        local anim = g:FindFirstChildOfClass("Animator")
+        if anim then anim:Destroy() end
+        g.Name = "ArcanumBT"
+        return g
+    end)
+    return ok and ghost or nil
+end
 
+function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
     local shouldShow = self.BACKTRACK_ENABLED
     if shouldShow and self.TEAM_CHECK and self:IsTeammate(targetPlayer) then
         shouldShow = false
     end
 
     if not shouldShow then
-        for _, s in ipairs(d.btBoxes) do if s then s.Visible = false end end
+        if d.btGhost then d.btGhost.Parent = nil end
+        if d.btHighlight then d.btHighlight.Enabled = false end
         d.btHistory = {}
         return
     end
@@ -546,44 +584,49 @@ function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
     local now = tick()
     if now - d.btLastRecord >= BT_INTERVAL then
         d.btLastRecord = now
-        table.insert(d.btHistory, { t = now, pos = root.Position })
+        table.insert(d.btHistory, { t = now, cf = root.CFrame })
 
         while #d.btHistory > 0 and (now - d.btHistory[1].t) > self.BACKTRACK_DURATION do
             table.remove(d.btHistory, 1)
         end
     end
 
-    local count = math.min(#d.btHistory, MAX_BT)
-    for i = 1, MAX_BT do
-        local s = d.btBoxes[i]
-        if not s then continue end
+    if #d.btHistory < 2 then
+        if d.btGhost then d.btGhost.Parent = nil end
+        if d.btHighlight then d.btHighlight.Enabled = false end
+        return
+    end
 
-        if i <= count then
-            local entry = d.btHistory[#d.btHistory - count + i]
-            if entry then
-                local top = entry.pos + Vector3.new(0, 3, 0)
-                local btm = entry.pos + Vector3.new(0, -3, 0)
-                local ts = camera:WorldToViewportPoint(top)
-                local bs = camera:WorldToViewportPoint(btm)
-                if ts.Z > 0 and bs.Z > 0 then
-                    local h = math.abs(bs.Y - ts.Y)
-                    local w = h * 0.55
-                    local cx = (ts.X + bs.X) * 0.5
-                    local age = (now - entry.t) / self.BACKTRACK_DURATION
-                    s.Position = Vector2.new(cx - w * 0.5, math.min(ts.Y, bs.Y))
-                    s.Size = Vector2.new(w, h)
-                    s.Color = self.BACKTRACK_COLOR
-                    s.Transparency = self.BACKTRACK_TRANSPARENCY + age * (1 - self.BACKTRACK_TRANSPARENCY)
-                    s.Visible = true
-                else
-                    s.Visible = false
-                end
-            else
-                s.Visible = false
-            end
-        else
-            s.Visible = false
-        end
+    if not d.btGhost or (now - d.btGhostTime > 1.5) then
+        if d.btGhost then pcall(function() d.btGhost:Destroy() end) end
+        d.btGhost = self:CreateGhost(char)
+        d.btGhostTime = now
+    end
+
+    if not d.btGhost then return end
+
+    local oldest = d.btHistory[1]
+    pcall(function() d.btGhost:PivotTo(oldest.cf) end)
+    d.btGhost.Parent = self.Workspace
+
+    if not d.btHighlight then
+        local ok, hl = pcall(function()
+            local h = Instance.new("Highlight")
+            h.Name = "ArcanumBTChams"
+            return h
+        end)
+        if ok and hl then d.btHighlight = hl end
+    end
+
+    if d.btHighlight then
+        d.btHighlight.FillColor = self.BACKTRACK_COLOR
+        d.btHighlight.FillTransparency = self.BACKTRACK_TRANSPARENCY
+        d.btHighlight.OutlineColor = self.BACKTRACK_COLOR
+        d.btHighlight.OutlineTransparency = math.clamp(self.BACKTRACK_TRANSPARENCY - 0.2, 0, 1)
+        d.btHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        d.btHighlight.Adornee = d.btGhost
+        d.btHighlight.Parent = d.btGhost
+        d.btHighlight.Enabled = true
     end
 end
 
@@ -695,6 +738,8 @@ function ESPModule:GetSettings()
         BOX_FILL_TRANSPARENCY = self.BOX_FILL_TRANSPARENCY,
         HEALTH_ENABLED = self.HEALTH_ENABLED,
         HEALTH_GRADIENT = self.HEALTH_GRADIENT,
+        HEALTH_LOW_COLOR = c3str(self.HEALTH_LOW_COLOR),
+        HEALTH_HIGH_COLOR = c3str(self.HEALTH_HIGH_COLOR),
         NAME_ENABLED = self.NAME_ENABLED,
         NAME_COLOR = c3str(self.NAME_COLOR),
         DISTANCE_ENABLED = self.DISTANCE_ENABLED,
@@ -743,6 +788,8 @@ function ESPModule:ApplySettings(s)
     apply("BOX_FILL_TRANSPARENCY", function(v) self:SetBoxFillTransparency(v) end)
     apply("HEALTH_ENABLED", function(v) self:SetHealthEnabled(v) end)
     apply("HEALTH_GRADIENT", function(v) self:SetHealthGradient(v) end)
+    applyC3("HEALTH_LOW_COLOR", function(v) self:SetHealthLowColor(v) end)
+    applyC3("HEALTH_HIGH_COLOR", function(v) self:SetHealthHighColor(v) end)
     apply("NAME_ENABLED", function(v) self:SetNameEnabled(v) end)
     applyC3("NAME_COLOR", function(v) self:SetNameColor(v) end)
     apply("DISTANCE_ENABLED", function(v) self:SetDistanceEnabled(v) end)
@@ -770,4 +817,3 @@ function ESPModule:ApplySettings(s)
 end
 
 return ESPModule
-

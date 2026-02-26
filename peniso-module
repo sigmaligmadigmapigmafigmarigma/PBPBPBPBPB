@@ -33,6 +33,17 @@ function RageModule.new(config)
 	self.MIN_DAMAGE_VALUE = 0
 	self.BASE_DAMAGE = 54
 
+	-- Double Tap
+	self.DOUBLETAP_ENABLED = false
+	self.DOUBLETAP_TELEPORT = true
+	self.DOUBLETAP_MAX_TP_DIST = 15
+	self.dtLastUse = 0
+	self.DT_COOLDOWN = 1.5
+
+	-- Rapidfire
+	self.RAPIDFIRE_ENABLED = false
+	self.RAPIDFIRE_SPEED = 2
+
 	-- Internal state
 	self.lastShot = 0
 	self.FIRE_RATE = 0.1
@@ -445,6 +456,136 @@ function RageModule:EquipSSGOnce()
 end
 
 -- ============================================
+-- FIRE HELPER
+-- ============================================
+function RageModule:FireWeapon(gun, targetPos, target)
+	local char = self.player.Character
+	local head = char and char:FindFirstChild("Head")
+	if not head then return false end
+
+	if gun.type == "AWP" then
+		local origin = head.Position
+		local dirVec = targetPos - origin
+		if dirVec.Magnitude < 0.01 then return false end
+		local direction = dirVec.Unit
+		local ok = pcall(function()
+			gun.fireShot:FireServer(origin, direction, target.targetPart)
+		end)
+		if ok then
+			task.defer(function()
+				self.Visuals:CreateTracer(origin, targetPos)
+			end)
+			return true
+		end
+	elseif gun.type == "CastRay" then
+		if not gun.hole or not gun.hole.Parent then return false end
+		local origin = gun.hole.Position
+		local dirVec = targetPos - origin
+		if dirVec.Magnitude < 0.01 then return false end
+		local direction = dirVec.Unit
+		local ray = Ray.new(origin, direction * 1000)
+		local ok = pcall(function()
+			gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
+		end)
+		if ok then
+			task.defer(function()
+				self.Visuals:CreateTracer(origin, targetPos)
+			end)
+			return true
+		end
+	end
+	return false
+end
+
+-- ============================================
+-- DOUBLE TAP
+-- ============================================
+function RageModule:FindNearestEnemy()
+	if not self:IsAlive() then return nil end
+	local char = self.player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+
+	local now = tick()
+	if now - self.lastPlayerListUpdate >= self.PLAYER_LIST_UPDATE_RATE then
+		self.lastPlayerListUpdate = now
+		self:UpdateActivePlayersList()
+	end
+
+	local bestTarget
+	local bestDist = self.DOUBLETAP_MAX_TP_DIST + 80
+
+	for _, data in ipairs(self.activePlayers) do
+		if not data.humanoid or data.humanoid.Health <= 0 then continue end
+		if not data.rootPart or not data.rootPart.Parent then continue end
+
+		local dist = (data.rootPart.Position - hrp.Position).Magnitude
+		if dist > bestDist then continue end
+
+		local part = self:GetTargetPart(data.character, dist)
+			or data.character:FindFirstChild("Head")
+			or data.rootPart
+		if not part then continue end
+
+		bestDist = dist
+		bestTarget = {
+			player = data.player,
+			character = data.character,
+			targetPart = part,
+			rootPart = data.rootPart,
+			distance = dist
+		}
+	end
+
+	return bestTarget
+end
+
+function RageModule:DoubleTapFire(gun, target)
+	local char = self.player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local originalCF = hrp.CFrame
+	local didTP = false
+
+	if self.DOUBLETAP_TELEPORT then
+		local dir = target.rootPart.Position - hrp.Position
+		local dist = dir.Magnitude
+		local tpDist = math.clamp(dist * 0.3, 0, self.DOUBLETAP_MAX_TP_DIST)
+		if tpDist > 2 then
+			hrp.CFrame = originalCF + dir.Unit * tpDist
+			didTP = true
+			task.wait()
+		end
+	end
+
+	local targetPos = self.PREDICTION_ENABLED
+		and self:PredictPosition(target.targetPart, target.rootPart)
+		or target.targetPart.Position
+
+	self:FireWeapon(gun, targetPos, target)
+
+	task.wait(0.06)
+
+	if not self:IsAlive() then
+		if didTP and hrp and hrp.Parent then hrp.CFrame = originalCF end
+		return
+	end
+
+	local tPos = self.PREDICTION_ENABLED
+		and self:PredictPosition(target.targetPart, target.rootPart)
+		or target.targetPart.Position
+	self:FireWeapon(gun, tPos, target)
+
+	if didTP then
+		task.wait(0.04)
+		if hrp and hrp.Parent then
+			hrp.CFrame = originalCF
+		end
+	end
+end
+
+-- ============================================
 -- MAIN LOOP
 -- ============================================
 function RageModule:Start()
@@ -473,7 +614,13 @@ function RageModule:Start()
 		end
 
 		local currentTime = tick()
-		if currentTime - self.lastShot < gun.fireRate then return end
+
+		local effectiveFireRate = gun.fireRate
+		if self.RAPIDFIRE_ENABLED then
+			effectiveFireRate = effectiveFireRate / math.max(self.RAPIDFIRE_SPEED, 1)
+		end
+
+		if currentTime - self.lastShot < effectiveFireRate then return end
 
 		if currentTime - self.lastPingUpdate >= self.PING_UPDATE_RATE then
 			self.lastPingUpdate = currentTime
@@ -481,6 +628,12 @@ function RageModule:Start()
 		end
 
 		local target = self:FindTarget()
+
+		if not target and self.DOUBLETAP_ENABLED and self.DOUBLETAP_TELEPORT
+			and (currentTime - self.dtLastUse) >= self.DT_COOLDOWN then
+			target = self:FindNearestEnemy()
+		end
+
 		if not target then return end
 
 		if self.RAGE_HITCHANCE_ENABLED and not self.AIRSHOT_ACTIVE then
@@ -490,50 +643,21 @@ function RageModule:Start()
 			end
 		end
 
-		local char = self.player.Character
-		local head = char and char:FindFirstChild("Head")
-		if not head then return end
+		if self.DOUBLETAP_ENABLED and (currentTime - self.dtLastUse) >= self.DT_COOLDOWN then
+			self.dtLastUse = currentTime
+			self.lastShot = currentTime
+			task.spawn(function()
+				self:DoubleTapFire(gun, target)
+			end)
+			return
+		end
 
 		local targetPos = self.PREDICTION_ENABLED
 			and self:PredictPosition(target.targetPart, target.rootPart)
 			or target.targetPart.Position
 
-		if gun.type == "AWP" then
-			local origin = head.Position
-			local dirVec = targetPos - origin
-			if dirVec.Magnitude < 0.01 then return end
-
-			local direction = dirVec.Unit
-			local ok = pcall(function()
-				gun.fireShot:FireServer(origin, direction, target.targetPart)
-			end)
-
-			if ok then
-				self.lastShot = currentTime
-				task.defer(function()
-					self.Visuals:CreateTracer(origin, targetPos)
-				end)
-			end
-
-		elseif gun.type == "CastRay" then
-			if not gun.hole or not gun.hole.Parent then return end
-
-			local origin = gun.hole.Position
-			local dirVec = targetPos - origin
-			if dirVec.Magnitude < 0.01 then return end
-
-			local direction = dirVec.Unit
-			local ray = Ray.new(origin, direction * 1000)
-			local ok = pcall(function()
-				gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
-			end)
-
-			if ok then
-				self.lastShot = currentTime
-				task.defer(function()
-					self.Visuals:CreateTracer(origin, targetPos)
-				end)
-			end
+		if self:FireWeapon(gun, targetPos, target) then
+			self.lastShot = currentTime
 		end
 	end)
 end
@@ -597,6 +721,30 @@ function RageModule:SetMinDamageValue(value)
 	self.MIN_DAMAGE_VALUE = value
 end
 
+function RageModule:SetDoubleTapEnabled(value)
+	self.DOUBLETAP_ENABLED = value
+end
+
+function RageModule:SetDoubleTapTeleport(value)
+	self.DOUBLETAP_TELEPORT = value
+end
+
+function RageModule:SetDoubleTapMaxDist(value)
+	self.DOUBLETAP_MAX_TP_DIST = value
+end
+
+function RageModule:SetDoubleTapCooldown(value)
+	self.DT_COOLDOWN = value
+end
+
+function RageModule:SetRapidfireEnabled(value)
+	self.RAPIDFIRE_ENABLED = value
+end
+
+function RageModule:SetRapidfireSpeed(value)
+	self.RAPIDFIRE_SPEED = value
+end
+
 -- ============================================
 -- CONFIG FUNCTIONS
 -- ============================================
@@ -614,6 +762,12 @@ function RageModule:GetSettings()
 		PREDICTION_STRENGTH = self.PREDICTION_STRENGTH,
 		MIN_DAMAGE_ENABLED = self.MIN_DAMAGE_ENABLED,
 		MIN_DAMAGE_VALUE = self.MIN_DAMAGE_VALUE,
+		DOUBLETAP_ENABLED = self.DOUBLETAP_ENABLED,
+		DOUBLETAP_TELEPORT = self.DOUBLETAP_TELEPORT,
+		DOUBLETAP_MAX_TP_DIST = self.DOUBLETAP_MAX_TP_DIST,
+		DT_COOLDOWN = self.DT_COOLDOWN,
+		RAPIDFIRE_ENABLED = self.RAPIDFIRE_ENABLED,
+		RAPIDFIRE_SPEED = self.RAPIDFIRE_SPEED,
 	}
 end
 
@@ -632,6 +786,12 @@ function RageModule:ApplySettings(settings)
 	if settings.PREDICTION_STRENGTH ~= nil then self:SetPredictionStrength(settings.PREDICTION_STRENGTH) end
 	if settings.MIN_DAMAGE_ENABLED ~= nil then self:SetMinDamageEnabled(settings.MIN_DAMAGE_ENABLED) end
 	if settings.MIN_DAMAGE_VALUE ~= nil then self:SetMinDamageValue(settings.MIN_DAMAGE_VALUE) end
+	if settings.DOUBLETAP_ENABLED ~= nil then self:SetDoubleTapEnabled(settings.DOUBLETAP_ENABLED) end
+	if settings.DOUBLETAP_TELEPORT ~= nil then self:SetDoubleTapTeleport(settings.DOUBLETAP_TELEPORT) end
+	if settings.DOUBLETAP_MAX_TP_DIST ~= nil then self:SetDoubleTapMaxDist(settings.DOUBLETAP_MAX_TP_DIST) end
+	if settings.DT_COOLDOWN ~= nil then self:SetDoubleTapCooldown(settings.DT_COOLDOWN) end
+	if settings.RAPIDFIRE_ENABLED ~= nil then self:SetRapidfireEnabled(settings.RAPIDFIRE_ENABLED) end
+	if settings.RAPIDFIRE_SPEED ~= nil then self:SetRapidfireSpeed(settings.RAPIDFIRE_SPEED) end
 end
 
 return RageModule

@@ -42,7 +42,8 @@ function RageModule.new(config)
 
 	-- Rapidfire
 	self.RAPIDFIRE_ENABLED = false
-	self.RAPIDFIRE_SPEED = 2
+	self.RAPIDFIRE_SHOTS = 5
+	self.RF_BURST_DELAY = 0.03
 
 	-- Internal state
 	self.lastShot = 0
@@ -615,12 +616,11 @@ function RageModule:Start()
 
 		local currentTime = tick()
 
-		local effectiveFireRate = gun.fireRate
 		if self.RAPIDFIRE_ENABLED then
-			effectiveFireRate = effectiveFireRate / math.max(self.RAPIDFIRE_SPEED, 1)
+			if currentTime - self.lastShot < self.RF_BURST_DELAY then return end
+		else
+			if currentTime - self.lastShot < gun.fireRate then return end
 		end
-
-		if currentTime - self.lastShot < effectiveFireRate then return end
 
 		if currentTime - self.lastPingUpdate >= self.PING_UPDATE_RATE then
 			self.lastPingUpdate = currentTime
@@ -648,6 +648,24 @@ function RageModule:Start()
 			self.lastShot = currentTime
 			task.spawn(function()
 				self:DoubleTapFire(gun, target)
+			end)
+			return
+		end
+
+		if self.RAPIDFIRE_ENABLED then
+			self.lastShot = currentTime
+			local shots = math.floor(self.RAPIDFIRE_SHOTS)
+			task.spawn(function()
+				for i = 1, shots do
+					if not self:IsAlive() then break end
+					local g = self:GetGun()
+					if not g then break end
+					local tPos = self.PREDICTION_ENABLED
+						and self:PredictPosition(target.targetPart, target.rootPart)
+						or target.targetPart.Position
+					self:FireWeapon(g, tPos, target)
+					if i < shots then task.wait() end
+				end
 			end)
 			return
 		end
@@ -741,8 +759,8 @@ function RageModule:SetRapidfireEnabled(value)
 	self.RAPIDFIRE_ENABLED = value
 end
 
-function RageModule:SetRapidfireSpeed(value)
-	self.RAPIDFIRE_SPEED = value
+function RageModule:SetRapidfireShots(value)
+	self.RAPIDFIRE_SHOTS = value
 end
 
 -- ============================================
@@ -767,7 +785,7 @@ function RageModule:GetSettings()
 		DOUBLETAP_MAX_TP_DIST = self.DOUBLETAP_MAX_TP_DIST,
 		DT_COOLDOWN = self.DT_COOLDOWN,
 		RAPIDFIRE_ENABLED = self.RAPIDFIRE_ENABLED,
-		RAPIDFIRE_SPEED = self.RAPIDFIRE_SPEED,
+		RAPIDFIRE_SHOTS = self.RAPIDFIRE_SHOTS,
 	}
 end
 
@@ -791,7 +809,7 @@ function RageModule:ApplySettings(settings)
 	if settings.DOUBLETAP_MAX_TP_DIST ~= nil then self:SetDoubleTapMaxDist(settings.DOUBLETAP_MAX_TP_DIST) end
 	if settings.DT_COOLDOWN ~= nil then self:SetDoubleTapCooldown(settings.DT_COOLDOWN) end
 	if settings.RAPIDFIRE_ENABLED ~= nil then self:SetRapidfireEnabled(settings.RAPIDFIRE_ENABLED) end
-	if settings.RAPIDFIRE_SPEED ~= nil then self:SetRapidfireSpeed(settings.RAPIDFIRE_SPEED) end
+	if settings.RAPIDFIRE_SHOTS ~= nil then self:SetRapidfireShots(settings.RAPIDFIRE_SHOTS) end
 end
 
 return RageModule

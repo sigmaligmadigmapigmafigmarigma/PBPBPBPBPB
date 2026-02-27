@@ -438,81 +438,6 @@ function RageModule:FindTarget()
 	return bestTarget
 end
 
-function RageModule:FindAllTargets()
-	if not self:IsAlive() then return {} end
-
-	local char = self.player.Character
-	local myHead = char and char:FindFirstChild("Head")
-	if not myHead then return {} end
-
-	self:UpdateActivePlayersList()
-
-	local targets = {}
-	local maxDist = self:GetEffectiveMaxDist()
-
-	for _, data in ipairs(self.activePlayers) do
-		if not data.humanoid or data.humanoid.Health <= 0 then continue end
-		if not data.rootPart or not data.rootPart.Parent then continue end
-
-		local dist = (data.rootPart.Position - myHead.Position).Magnitude
-		if dist > maxDist then continue end
-
-		local part
-
-		if self.AIRSHOT_ACTIVE then
-			part = data.character:FindFirstChild("Head")
-			if not part or not self:IsPartVisible(part, data.character) then
-				continue
-			end
-		elseif self.MIN_DAMAGE_ENABLED then
-			part = nil
-			for _, group in ipairs(self.MIN_DAMAGE_PRIORITY) do
-				for _, partName in ipairs(group.parts) do
-					local p = data.character:FindFirstChild(partName)
-					if p then
-						local dmg = self:CalculatePotentialDamage(partName, dist)
-						if dmg >= self.MIN_DAMAGE_VALUE and self:IsPartVisible(p, data.character) then
-							part = p
-							break
-						end
-					end
-				end
-				if part then break end
-			end
-			if not part then continue end
-		else
-			local visible = false
-			for _, partName in ipairs({
-				"Head", "UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart",
-				"LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"
-			}) do
-				local p = data.character:FindFirstChild(partName)
-				if p and self:IsPartVisible(p, data.character) then
-					visible = true
-					break
-				end
-			end
-			if not visible then continue end
-
-			part = self:GetTargetPart(data.character, dist)
-				or data.character:FindFirstChild("Head")
-				or data.rootPart
-			if not part then continue end
-		end
-
-		table.insert(targets, {
-			player = data.player,
-			character = data.character,
-			targetPart = part,
-			rootPart = data.rootPart,
-			distance = dist
-		})
-	end
-
-	table.sort(targets, function(a, b) return a.distance < b.distance end)
-	return targets
-end
-
 function RageModule:EquipSSGOnce()
 	if not self.AUTO_EQUIP_SSG then return end
 	if self.autoEquippedOnce then return end
@@ -788,13 +713,10 @@ function RageModule:RapidFirePump()
 	local gun = self:GetGun()
 	if not gun then return end
 
-	local targets = self:FindAllTargets()
-	for _, target in ipairs(targets) do
-		if not self:IsAlive() then break end
-		if target.targetPart and target.targetPart.Parent then
-			self:RapidFireBurst(gun, target)
-		end
-	end
+	local target = self:FindTarget()
+	if not target then return end
+
+	self:RapidFireBurst(gun, target)
 end
 
 -- ============================================
@@ -869,13 +791,7 @@ function RageModule:Start()
 			target)
 
 		if self.RAPIDFIRE_ENABLED then
-			local allTargets = self:FindAllTargets()
-			for _, t in ipairs(allTargets) do
-				if not self:IsAlive() then break end
-				if t.targetPart and t.targetPart.Parent then
-					self:RapidFireBurst(gun, t)
-				end
-			end
+			self:RapidFireBurst(gun, target)
 		end
 	end)
 
@@ -919,15 +835,10 @@ function RageModule:SetRapidfireEnabled(value)
 				while self.RAPIDFIRE_ENABLED and self.RAPIDFIRE_MODE == "Automatic" do
 					if self.RAGE_ENABLED and self:IsAlive() and self.RAGE_AUTOSHOOT then
 						local gun = self:GetGun()
-						if gun then
-							local targets = self:FindAllTargets()
-							for _, target in ipairs(targets) do
-								if not self:IsAlive() then break end
-								if target.targetPart and target.targetPart.Parent then
-									self:RapidFireBurst(gun, target)
-								end
-							end
-							if self.RAPIDFIRE_REEQUIP and #targets > 0 then
+						local target = gun and self:FindTarget()
+						if gun and target then
+							self:RapidFireBurst(gun, target)
+							if self.RAPIDFIRE_REEQUIP then
 								self:ReequipWeapon()
 							end
 						end

@@ -44,6 +44,7 @@ function RageModule.new(config)
 	-- Rapidfire
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 5
+	self._rfGun = nil
 
 	-- Internal state
 	self.lastShot = 0
@@ -651,7 +652,7 @@ end
 -- ============================================
 -- RAPIDFIRE TICK
 -- ============================================
-function RageModule:RapidFireBurst(gun, initialTarget)
+function RageModule:RapidFireBurst(gun, initialTarget, reEquip)
 	local char = self.player.Character
 	if not char then return end
 	local head = char:FindFirstChild("Head")
@@ -707,16 +708,18 @@ function RageModule:RapidFireBurst(gun, initialTarget)
 		end
 	end
 
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local tool = char:FindFirstChildOfClass("Tool")
-	if hum and tool then
-		local ref = tool
-		hum:UnequipTools()
-		task.defer(function()
-			if ref and ref.Parent and hum and hum.Parent then
-				hum:EquipTool(ref)
-			end
-		end)
+	if reEquip then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local tool = char:FindFirstChildOfClass("Tool")
+		if hum and tool then
+			local ref = tool
+			hum:UnequipTools()
+			task.defer(function()
+				if ref and ref.Parent and hum and hum.Parent then
+					hum:EquipTool(ref)
+				end
+			end)
+		end
 	end
 end
 
@@ -792,7 +795,8 @@ function RageModule:Start()
 			target)
 
 		if self.RAPIDFIRE_ENABLED then
-			self:RapidFireBurst(gun, target)
+			self._rfGun = gun
+			self:RapidFireBurst(gun, target, true)
 		end
 	end)
 
@@ -800,13 +804,13 @@ function RageModule:Start()
 		if not self.RAPIDFIRE_ENABLED then return end
 		if not self.RAGE_ENABLED or not self:IsAlive() or not self.RAGE_AUTOSHOOT then return end
 
-		local gun = self:GetGun()
+		local gun = self._rfGun or self:GetGun()
 		if not gun then return end
 
 		local target = self:FindTarget()
 		if not target then return end
 
-		self:RapidFireBurst(gun, target)
+		self:RapidFireBurst(gun, target, false)
 	end)
 
 	self._rfLoopActive = false
@@ -826,10 +830,10 @@ function RageModule:SetRapidfireEnabled(value)
 			task.spawn(function()
 				while self.RAPIDFIRE_ENABLED do
 					if self.RAGE_ENABLED and self:IsAlive() and self.RAGE_AUTOSHOOT then
-						local gun = self:GetGun()
+						local gun = self._rfGun or self:GetGun()
 						local target = gun and self:FindTarget()
 						if gun and target then
-							self:RapidFireBurst(gun, target)
+							self:RapidFireBurst(gun, target, false)
 						end
 					end
 					task.wait()

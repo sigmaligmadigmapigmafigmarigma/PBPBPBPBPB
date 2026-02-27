@@ -55,7 +55,7 @@ self.GHOST_FADE_POWER = 1.2
 	self.WALLBANG_LIFETIME = 3
 
 	self.KILLFX_ENABLED = false
-	self.KILLFX_TYPE = "ImpactFX"
+	self.KILLFX_TYPE = "Sparkle"
 	self.KILLFX_COLOR = Color3.fromRGB(80, 160, 255)
 	self.KILLFX_LIGHT_COLOR = Color3.fromRGB(120, 180, 255)
 	self.KILLFX_CUSTOM_DURATION = 0.25
@@ -115,10 +115,6 @@ self.GHOST_FADE_POWER = 1.2
 	self._hitMarkerGui = nil
 	self._hitMarkerLines = {}
 
-	self.KILL_COUNTER_ENABLED = false
-	self._killCount = 0
-	self._killCountLabel = nil
-
 	self.tracerPool = {}
 	self.MAX_TRACER_POOL = 12
 
@@ -161,7 +157,6 @@ function VisualsModule:Initialize()
 	self:CreateOffscreenArrows()
 	self:CreateKillImageGUI()
 	self:CreateHitMarkerUI()
-	self:CreateKillCounterUI()
 	self:SetupBacktrackGhost()
 	self:SetupKillFXListener()
 	self:SetupPlayerEffects()
@@ -675,29 +670,40 @@ function VisualsModule:CreateHitMarkerUI()
 
 	local holder = Instance.new("Frame")
 	holder.Name = "HitMarker"
-	holder.Size = UDim2.new(0, 30, 0, 30)
-	holder.Position = UDim2.new(0.5, -15, 0.5, -15)
+	holder.Size = UDim2.new(0, 40, 0, 40)
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Position = UDim2.new(0.5, 0, 0.5, 0)
 	holder.BackgroundTransparency = 1
 	holder.Visible = false
 	holder.Parent = gui
 
 	self._hitMarkerLines = {}
-	local offsets = {
-		{UDim2.new(0.5, -1, 0, 0), UDim2.new(0, 2, 0, 10), 45},
-		{UDim2.new(1, -10, 0.5, -1), UDim2.new(0, 10, 0, 2), 45},
-		{UDim2.new(0.5, -1, 1, -10), UDim2.new(0, 2, 0, 10), 45},
-		{UDim2.new(0, 0, 0.5, -1), UDim2.new(0, 10, 0, 2), 45},
-	}
-	for i, data in ipairs(offsets) do
+
+	local function makeLine(rot)
 		local line = Instance.new("Frame")
-		line.Size = data[2]
-		line.Position = data[1]
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position = UDim2.new(0.5, 0, 0.5, 0)
+		line.Size = UDim2.new(0, 2, 0, 24)
 		line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 		line.BorderSizePixel = 0
-		line.Rotation = data[3]
+		line.Rotation = rot
+		line.BackgroundTransparency = 1
 		line.Parent = holder
-		table.insert(self._hitMarkerLines, line)
+
+		local hole = Instance.new("Frame")
+		hole.AnchorPoint = Vector2.new(0.5, 0.5)
+		hole.Position = UDim2.new(0.5, 0, 0.5, 0)
+		hole.Size = UDim2.new(0, 4, 0, 8)
+		hole.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		hole.BackgroundTransparency = 1
+		hole.BorderSizePixel = 0
+		hole.Parent = line
+
+		return line
 	end
+
+	table.insert(self._hitMarkerLines, makeLine(45))
+	table.insert(self._hitMarkerLines, makeLine(-45))
 
 	self._hitMarkerGui = holder
 end
@@ -707,63 +713,27 @@ function VisualsModule:FlashHitMarker()
 	if not self._hitMarkerGui then return end
 
 	self._hitMarkerGui.Visible = true
+	self._hitMarkerGui.Size = UDim2.new(0, 50, 0, 50)
 	for _, l in ipairs(self._hitMarkerLines) do
 		l.BackgroundTransparency = 0
 	end
 
+	local shrink = self.TweenService:Create(self._hitMarkerGui,
+		TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = UDim2.new(0, 40, 0, 40)}
+	)
+	shrink:Play()
+
 	task.spawn(function()
-		task.wait(0.12)
+		task.wait(0.15)
 		if not self._hitMarkerGui then return end
-		local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		local fadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		for _, l in ipairs(self._hitMarkerLines) do
-			self.TweenService:Create(l, info, {BackgroundTransparency = 1}):Play()
+			self.TweenService:Create(l, fadeInfo, {BackgroundTransparency = 1}):Play()
 		end
-		task.wait(0.25)
+		task.wait(0.2)
 		if self._hitMarkerGui then self._hitMarkerGui.Visible = false end
 	end)
-end
-
-function VisualsModule:CreateKillCounterUI()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "NemesisKillCounter"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 50
-	gui.Parent = self.guiParent
-
-	local label = Instance.new("TextLabel")
-	label.Name = "KillCount"
-	label.Size = UDim2.new(0, 120, 0, 22)
-	label.Position = UDim2.new(0, 12, 0, 50)
-	label.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
-	label.BackgroundTransparency = 0.3
-	label.BorderSizePixel = 0
-	label.Text = "KILLS: 0"
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextSize = 12
-	label.Font = Enum.Font.Code
-	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.Visible = false
-	label.Parent = gui
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 4)
-	corner.Parent = label
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(40, 40, 46)
-	stroke.Thickness = 1
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Parent = label
-
-	self._killCountLabel = label
-end
-
-function VisualsModule:IncrementKillCounter()
-	self._killCount += 1
-	if self._killCountLabel then
-		self._killCountLabel.Text = "KILLS: " .. self._killCount
-	end
 end
 
 function VisualsModule:SetupPlayerEffects()
@@ -836,40 +806,42 @@ function VisualsModule:SpawnWings()
 	local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
 	if not torso then return end
 
-	local function makeWing(offset, scaleX)
-		local wing = Instance.new("Part")
-		wing.Name = "ArcWing"
-		wing.Size = Vector3.new(0.2, 3, 2)
-		wing.Material = Enum.Material.Neon
-		wing.Color = self.WINGS_COLOR
-		wing.Anchored = false
-		wing.CanCollide = false
-		wing.CanTouch = false
-		wing.CanQuery = false
-		wing.CastShadow = false
-		wing.Massless = true
-		wing.Transparency = 0.15
+	local parts = {}
 
-		local mesh = Instance.new("SpecialMesh")
-		mesh.MeshType = Enum.MeshType.FileMesh
-		mesh.MeshId = "rbxassetid://1428058913"
-		mesh.Scale = Vector3.new(scaleX * 0.015, 0.015, 0.01)
-		mesh.Parent = wing
+	local function makeFeather(cf, size)
+		local p = Instance.new("WedgePart")
+		p.Name = "ArcWingFeather"
+		p.Size = size
+		p.Material = Enum.Material.Neon
+		p.Color = self.WINGS_COLOR
+		p.Anchored = false
+		p.CanCollide = false
+		p.CanTouch = false
+		p.CanQuery = false
+		p.CastShadow = false
+		p.Massless = true
+		p.Transparency = 0.15
+		p.CFrame = torso.CFrame * cf
+		p.Parent = char
 
 		local weld = Instance.new("WeldConstraint")
 		weld.Part0 = torso
-		weld.Part1 = wing
-		weld.Parent = wing
+		weld.Part1 = p
+		weld.Parent = p
 
-		wing.CFrame = torso.CFrame * offset
-		wing.Parent = char
-		return wing
+		table.insert(parts, p)
+		return p
 	end
 
-	local leftWing = makeWing(CFrame.new(-0.8, 0.3, 0.7) * CFrame.Angles(0, math.rad(180), 0), 1)
-	local rightWing = makeWing(CFrame.new(0.8, 0.3, 0.7) * CFrame.Angles(0, 0, 0), -1)
+	makeFeather(CFrame.new(-1.2, 0.6, 0.5) * CFrame.Angles(math.rad(10), math.rad(200), math.rad(-15)), Vector3.new(0.12, 2.2, 1.4))
+	makeFeather(CFrame.new(-2.0, 0.3, 0.7) * CFrame.Angles(math.rad(5), math.rad(210), math.rad(-25)), Vector3.new(0.10, 2.8, 1.0))
+	makeFeather(CFrame.new(-2.6, -0.1, 0.9) * CFrame.Angles(math.rad(0), math.rad(215), math.rad(-35)), Vector3.new(0.08, 2.4, 0.8))
 
-	self._wingParts = {leftWing, rightWing}
+	makeFeather(CFrame.new(1.2, 0.6, 0.5) * CFrame.Angles(math.rad(10), math.rad(-20), math.rad(15)), Vector3.new(0.12, 2.2, 1.4))
+	makeFeather(CFrame.new(2.0, 0.3, 0.7) * CFrame.Angles(math.rad(5), math.rad(-30), math.rad(25)), Vector3.new(0.10, 2.8, 1.0))
+	makeFeather(CFrame.new(2.6, -0.1, 0.9) * CFrame.Angles(math.rad(0), math.rad(-35), math.rad(35)), Vector3.new(0.08, 2.4, 0.8))
+
+	self._wingParts = parts
 end
 
 function VisualsModule:DestroyWings()
@@ -886,37 +858,102 @@ function VisualsModule:SpawnAura()
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Name = "ArcAura"
-	emitter.Color = ColorSequence.new(self.AURA_COLOR)
-	emitter.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(0.5, 0.8),
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcAura"
+	folder.Parent = char
+
+	local NUM_ORBS = 5
+	local RADIUS = 3.2
+	local ORB_SIZE = Vector3.new(0.35, 0.35, 0.35)
+
+	local orbs = {}
+	for i = 1, NUM_ORBS do
+		local orb = Instance.new("Part")
+		orb.Name = "AuraOrb_" .. i
+		orb.Shape = Enum.PartType.Ball
+		orb.Size = ORB_SIZE
+		orb.Material = Enum.Material.Neon
+		orb.Color = self.AURA_COLOR
+		orb.Anchored = true
+		orb.CanCollide = false
+		orb.CanTouch = false
+		orb.CanQuery = false
+		orb.CastShadow = false
+		orb.Transparency = 0.3
+
+		local light = Instance.new("PointLight")
+		light.Color = self.AURA_COLOR
+		light.Range = 4
+		light.Brightness = 0.5
+		light.Parent = orb
+
+		orb.Parent = folder
+		table.insert(orbs, orb)
+	end
+
+	local rising = Instance.new("ParticleEmitter")
+	rising.Name = "AuraRise"
+	rising.Color = ColorSequence.new(self.AURA_COLOR)
+	rising.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0.5, 0.25),
 		NumberSequenceKeypoint.new(1, 0),
 	})
-	emitter.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.7),
-		NumberSequenceKeypoint.new(0.4, 0.4),
+	rising.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(0.7, 0.7),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	emitter.Lifetime = NumberRange.new(0.6, 1.2)
-	emitter.Rate = 25
-	emitter.Speed = NumberRange.new(0.5, 1.5)
-	emitter.SpreadAngle = Vector2.new(360, 360)
-	emitter.RotSpeed = NumberRange.new(-90, 90)
-	emitter.LightEmission = 0.6
-	emitter.LightInfluence = 0.2
-	emitter.Texture = "rbxassetid://6490035152"
-	emitter.Parent = hrp
+	rising.Lifetime = NumberRange.new(0.8, 1.5)
+	rising.Rate = 12
+	rising.Speed = NumberRange.new(1, 3)
+	rising.SpreadAngle = Vector2.new(30, 30)
+	rising.RotSpeed = NumberRange.new(-45, 45)
+	rising.LightEmission = 0.8
+	rising.LightInfluence = 0.1
+	rising.Texture = "rbxassetid://6490035152"
+	rising.EmissionDirection = Enum.NormalId.Top
+	rising.Parent = hrp
 
-	self._auraEmitter = emitter
+	self._auraData = {
+		folder = folder,
+		orbs = orbs,
+		emitter = rising,
+		conn = nil,
+	}
+
+	self._auraData.conn = self.RunService.Heartbeat:Connect(function()
+		if not hrp or not hrp.Parent then
+			self:DestroyAura()
+			return
+		end
+		local t = tick()
+		local basePos = hrp.Position
+		for idx, orb in ipairs(orbs) do
+			if orb and orb.Parent then
+				local angle = (t * 1.8) + (idx - 1) * (math.pi * 2 / NUM_ORBS)
+				local yOff = math.sin(t * 2.5 + idx) * 0.6
+				local x = math.cos(angle) * RADIUS
+				local z = math.sin(angle) * RADIUS
+				orb.CFrame = CFrame.new(basePos + Vector3.new(x, yOff, z))
+			end
+		end
+	end)
 end
 
 function VisualsModule:DestroyAura()
-	if self._auraEmitter and self._auraEmitter.Parent then
-		self._auraEmitter:Destroy()
+	if self._auraData then
+		if self._auraData.conn then
+			self._auraData.conn:Disconnect()
+		end
+		if self._auraData.folder and self._auraData.folder.Parent then
+			self._auraData.folder:Destroy()
+		end
+		if self._auraData.emitter and self._auraData.emitter.Parent then
+			self._auraData.emitter:Destroy()
+		end
+		self._auraData = nil
 	end
-	self._auraEmitter = nil
 end
 
 function VisualsModule:ConnectJumpCircles()
@@ -1201,11 +1238,7 @@ function VisualsModule:SetupKillFXListener()
 			if not head then return end
 
 			local pos = head.Position
-			if self.KILLFX_TYPE == "ImpactFX" then
-				self:PlayImpactFX(pos)
-			elseif self.KILLFX_TYPE == "CustomFX" then
-				self:PlayCustomFX(pos)
-			elseif self.KILLFX_TYPE == "Sparkle" then
+			if self.KILLFX_TYPE == "Sparkle" then
 				self:PlaySparkleFX(pos)
 			elseif self.KILLFX_TYPE == "Ring" then
 				self:PlayRingFX(pos)
@@ -1213,9 +1246,6 @@ function VisualsModule:SetupKillFXListener()
 				self:PlayBeamFX(pos)
 			end
 
-			if self.KILL_COUNTER_ENABLED then
-				self:IncrementKillCounter()
-			end
 		end)
 	end
 
@@ -1688,8 +1718,17 @@ end
 
 function VisualsModule:SetAuraColor(value)
 	self.AURA_COLOR = value
-	if self._auraEmitter and self._auraEmitter.Parent then
-		self._auraEmitter.Color = ColorSequence.new(value)
+	if self._auraData then
+		for _, orb in ipairs(self._auraData.orbs) do
+			if orb and orb.Parent then
+				orb.Color = value
+				local light = orb:FindFirstChildOfClass("PointLight")
+				if light then light.Color = value end
+			end
+		end
+		if self._auraData.emitter and self._auraData.emitter.Parent then
+			self._auraData.emitter.Color = ColorSequence.new(value)
+		end
 	end
 end
 
@@ -1710,12 +1749,6 @@ function VisualsModule:SetHitMarkerEnabled(value)
 	self.HIT_MARKER_ENABLED = value
 end
 
-function VisualsModule:SetKillCounterEnabled(value)
-	self.KILL_COUNTER_ENABLED = value
-	if self._killCountLabel then
-		self._killCountLabel.Visible = value
-	end
-end
 
 function VisualsModule:SetWallbangEnabled(value)
 	self.WALLBANG_ENABLED = value
@@ -1860,7 +1893,6 @@ function VisualsModule:GetSettings()
 		JUMP_CIRCLES_COLOR = colorToTable(self.JUMP_CIRCLES_COLOR),
 
 		HIT_MARKER_ENABLED = self.HIT_MARKER_ENABLED,
-		KILL_COUNTER_ENABLED = self.KILL_COUNTER_ENABLED,
 
 		ATMOSPHERE_ENABLED = self.ATMOSPHERE_ENABLED,
 		ATMOSPHERE_DENSITY = self.ATMOSPHERE_DENSITY,
@@ -1939,7 +1971,6 @@ function VisualsModule:ApplySettings(settings)
 	if settings.JUMP_CIRCLES_COLOR then self:SetJumpCirclesColor(toColor3(settings.JUMP_CIRCLES_COLOR) or self.JUMP_CIRCLES_COLOR) end
 
 	if settings.HIT_MARKER_ENABLED ~= nil then self:SetHitMarkerEnabled(settings.HIT_MARKER_ENABLED) end
-	if settings.KILL_COUNTER_ENABLED ~= nil then self:SetKillCounterEnabled(settings.KILL_COUNTER_ENABLED) end
 
 	if settings.ATMOSPHERE_ENABLED ~= nil then self:SetAtmosphereEnabled(settings.ATMOSPHERE_ENABLED) end
 	if settings.ATMOSPHERE_DENSITY ~= nil then self:SetAtmosphereDensity(settings.ATMOSPHERE_DENSITY) end

@@ -594,11 +594,56 @@ function RageModule:DoubleTapFire(gun, target)
 end
 
 -- ============================================
--- RAPIDFIRE RE-EQUIP
+-- RAPIDFIRE BURST (micro-offsets + re-equip)
 -- ============================================
-function RageModule:RapidFireReEquip()
+function RageModule:RapidFireBurst(gun, target)
 	local char = self.player.Character
-	if not char then return end
+	local head = char and char:FindFirstChild("Head")
+	if not head then return end
+
+	local targetPos = self.PREDICTION_ENABLED
+		and self:PredictPosition(target.targetPart, target.rootPart)
+		or target.targetPart.Position
+
+	local shots = math.floor(self.RAPIDFIRE_SHOTS)
+
+	if gun.type == "AWP" then
+		local origin = head.Position
+		local dirVec = targetPos - origin
+		if dirVec.Magnitude < 0.01 then return end
+		local direction = dirVec.Unit
+
+		for i = 1, shots do
+			local ofs = Vector3.new(
+				(math.random() - 0.5) * 0.002,
+				(math.random() - 0.5) * 0.002,
+				(math.random() - 0.5) * 0.002
+			)
+			pcall(function()
+				gun.fireShot:FireServer(origin + ofs, direction, target.targetPart)
+			end)
+		end
+
+	elseif gun.type == "CastRay" then
+		if not gun.hole or not gun.hole.Parent then return end
+		local origin = gun.hole.Position
+		local dirVec = targetPos - origin
+		if dirVec.Magnitude < 0.01 then return end
+		local direction = dirVec.Unit
+
+		for i = 1, shots do
+			local ofs = Vector3.new(
+				(math.random() - 0.5) * 0.002,
+				(math.random() - 0.5) * 0.002,
+				(math.random() - 0.5) * 0.002
+			)
+			local ray = Ray.new(origin + ofs, direction * 1000)
+			pcall(function()
+				gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
+			end)
+		end
+	end
+
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	local tool = char:FindFirstChildOfClass("Tool")
 	if hum and tool then
@@ -613,49 +658,9 @@ function RageModule:RapidFireReEquip()
 end
 
 -- ============================================
--- RAPIDFIRE BURST
--- ============================================
-function RageModule:RapidFireBurst(gun)
-	if self._rfBurstActive then return end
-	self._rfBurstActive = true
-
-	task.spawn(function()
-		for i = 1, self.RAPIDFIRE_SHOTS do
-			if not self.RAPIDFIRE_ENABLED then break end
-			if not self:IsAlive() then break end
-
-			local curGun = self:GetGun()
-			if not curGun then break end
-
-			self:UpdateActivePlayersList()
-			local tgt = self:FindTarget()
-			if not tgt then break end
-
-			local tPos = self.PREDICTION_ENABLED
-				and self:PredictPosition(tgt.targetPart, tgt.rootPart)
-				or tgt.targetPart.Position
-
-			pcall(function()
-				self:FireWeapon(curGun, tPos, tgt)
-			end)
-
-			self:RapidFireReEquip()
-
-			if i < self.RAPIDFIRE_SHOTS then
-				task.wait(0.06 + math.random() * 0.02)
-			end
-		end
-
-		self._rfBurstActive = false
-	end)
-end
-
--- ============================================
 -- MAIN LOOP
 -- ============================================
 function RageModule:Start()
-	self._rfBurstActive = false
-
 	self.player.CharacterAdded:Connect(function()
 		self.autoEquippedOnce = false
 	end)
@@ -682,12 +687,9 @@ function RageModule:Start()
 
 		local currentTime = tick()
 
-		local effectiveRate = gun.fireRate
-		if self.RAPIDFIRE_ENABLED then
-			effectiveRate = math.max(gun.fireRate / self.RAPIDFIRE_SHOTS, 0.05)
+		if not self.RAPIDFIRE_ENABLED then
+			if currentTime - self.lastShot < gun.fireRate then return end
 		end
-
-		if currentTime - self.lastShot < effectiveRate then return end
 
 		if currentTime - self.lastPingUpdate >= self.PING_UPDATE_RATE then
 			self.lastPingUpdate = currentTime
@@ -719,18 +721,60 @@ function RageModule:Start()
 			return
 		end
 
-		local targetPos = self.PREDICTION_ENABLED
-			and self:PredictPosition(target.targetPart, target.rootPart)
-			or target.targetPart.Position
+		self.lastShot = currentTime
+		self:FireWeapon(gun,
+			self.PREDICTION_ENABLED
+				and self:PredictPosition(target.targetPart, target.rootPart)
+				or target.targetPart.Position,
+			target)
 
-		if self:FireWeapon(gun, targetPos, target) then
-			self.lastShot = currentTime
-		end
-
-		if self.RAPIDFIRE_ENABLED and not self._rfBurstActive then
-			self:RapidFireBurst(gun)
+		if self.RAPIDFIRE_ENABLED then
+			self:RapidFireBurst(gun, target)
 		end
 	end)
+
+	self.RunService.Stepped:Connect(function()
+		if not self.RAPIDFIRE_ENABLED then return end
+		if not self.RAGE_ENABLED or not self:IsAlive() or not self.RAGE_AUTOSHOOT then return end
+
+		local gun = self:GetGun()
+		if not gun then return end
+
+		local target = self:FindTarget()
+		if not target then return end
+
+		self:RapidFireBurst(gun, target)
+	end)
+
+	self._rfLoopActive = false
+end
+
+function RageModule:SetRapidfireEnabled(value)
+	self.RAPIDFIRE_ENABLED = value
+	if value then
+		self.Notification:Notify({
+			Title = "Rapidfire",
+			Content = "Enabled — " .. self.RAPIDFIRE_SHOTS .. " shots per tick",
+			Icon = "info",
+			Duration = 3
+		})
+		if not self._rfLoopActive then
+			self._rfLoopActive = true
+			task.spawn(function()
+				while self.RAPIDFIRE_ENABLED do
+					if self.RAGE_ENABLED and self:IsAlive() and self.RAGE_AUTOSHOOT then
+						local gun = self:GetGun()
+						local target = gun and self:FindTarget()
+						if gun and target then
+							self:RapidFireBurst(gun, target)
+						end
+					end
+					task.wait()
+				end
+				self._rfLoopActive = false
+			end)
+		end
+	end
 end
 
 -- ============================================
@@ -810,10 +854,6 @@ end
 
 function RageModule:SetMaxDistOverride(value)
 	self.DT_MAXDIST_OVERRIDE = value
-end
-
-function RageModule:SetRapidfireEnabled(value)
-	self.RAPIDFIRE_ENABLED = value
 end
 
 function RageModule:SetRapidfireShots(value)

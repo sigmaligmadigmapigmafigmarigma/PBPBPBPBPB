@@ -39,6 +39,7 @@ function RageModule.new(config)
 	self.DOUBLETAP_MAX_TP_DIST = 15
 	self.dtLastUse = 0
 	self.DT_COOLDOWN = 1.5
+	self.DT_MAXDIST_OVERRIDE = false
 
 	-- Rapidfire
 	self.RAPIDFIRE_ENABLED = false
@@ -91,6 +92,13 @@ end
 -- ============================================
 -- UTILITY FUNCTIONS
 -- ============================================
+function RageModule:GetEffectiveMaxDist()
+	if self.DT_MAXDIST_OVERRIDE and self.DOUBLETAP_ENABLED then
+		return 99999
+	end
+	return self.MAX_DISTANCE
+end
+
 function RageModule:IsAlive()
 	local char = self.player.Character
 	if not char then return false end
@@ -257,7 +265,7 @@ function RageModule:IsPartVisible(targetPart, targetChar)
 	local dist = dir.Magnitude
 
 	if dist < 0.1 then return true end
-	if dist > self.MAX_DISTANCE then return false end
+	if dist > self:GetEffectiveMaxDist() then return false end
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude    
@@ -347,7 +355,7 @@ function RageModule:FindTarget()
 	end
 
 	local bestTarget
-	local bestDist = self.MAX_DISTANCE
+	local bestDist = self:GetEffectiveMaxDist()
 
 	for _, data in ipairs(self.activePlayers) do
 		if not data.humanoid or data.humanoid.Health <= 0 then continue end
@@ -520,7 +528,7 @@ function RageModule:FindAllTargets()
 		if not data.rootPart or not data.rootPart.Parent then continue end
 
 		local dist = (data.rootPart.Position - myHead.Position).Magnitude
-		if dist > self.MAX_DISTANCE then continue end
+		if dist > self:GetEffectiveMaxDist() then continue end
 
 		local visible = false
 		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}) do
@@ -568,7 +576,7 @@ function RageModule:FindNearestEnemy()
 	end
 
 	local bestTarget
-	local bestDist = self.DOUBLETAP_MAX_TP_DIST + 80
+	local bestDist = self.DT_MAXDIST_OVERRIDE and 99999 or (self.DOUBLETAP_MAX_TP_DIST + 80)
 
 	for _, data in ipairs(self.activePlayers) do
 		if not data.humanoid or data.humanoid.Health <= 0 then continue end
@@ -836,6 +844,10 @@ end
 
 function RageModule:SetDoubleTapCooldown(value)
 	self.DT_COOLDOWN = value
+end
+
+function RageModule:SetMaxDistOverride(value)
+	self.DT_MAXDIST_OVERRIDE = value
 end
 
 function RageModule:SetRapidfireEnabled(value)

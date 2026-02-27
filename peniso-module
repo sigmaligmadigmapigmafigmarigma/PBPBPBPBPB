@@ -651,64 +651,51 @@ end
 -- ============================================
 -- RAPIDFIRE TICK
 -- ============================================
-function RageModule:RapidFireBurst(gun, target)
+function RageModule:RapidFireBurst(gun, initialTarget)
 	local char = self.player.Character
 	local head = char and char:FindFirstChild("Head")
 	if not head then return end
 
-	local targetPos = self.PREDICTION_ENABLED
-		and self:PredictPosition(target.targetPart, target.rootPart)
-		or target.targetPart.Position
-
 	local shots = math.floor(self.RAPIDFIRE_SHOTS)
+	local cur = initialTarget
 
-	if gun.type == "AWP" then
-		local origin = head.Position
-		local dirVec = targetPos - origin
-		if dirVec.Magnitude < 0.01 then return end
-		local direction = dirVec.Unit
-
-		for i = 1, shots do
-			local ofs = Vector3.new(
-				(math.random() - 0.5) * 0.002,
-				(math.random() - 0.5) * 0.002,
-				(math.random() - 0.5) * 0.002
-			)
-			pcall(function()
-				gun.fireShot:FireServer(origin + ofs, direction, target.targetPart)
-			end)
+	for i = 1, shots do
+		local hum = cur.character and cur.character:FindFirstChildOfClass("Humanoid")
+		if not hum or hum.Health <= 0 or not cur.rootPart or not cur.rootPart.Parent then
+			cur = self:FindTarget()
+			if not cur then break end
 		end
 
-	elseif gun.type == "CastRay" then
-		if not gun.hole or not gun.hole.Parent then return end
-		local origin = gun.hole.Position
-		local dirVec = targetPos - origin
-		if dirVec.Magnitude < 0.01 then return end
-		local direction = dirVec.Unit
+		local targetPos = self.PREDICTION_ENABLED
+			and self:PredictPosition(cur.targetPart, cur.rootPart)
+			or cur.targetPart.Position
 
-		for i = 1, shots do
-			local ofs = Vector3.new(
-				(math.random() - 0.5) * 0.002,
-				(math.random() - 0.5) * 0.002,
-				(math.random() - 0.5) * 0.002
-			)
-			local ray = Ray.new(origin + ofs, direction * 1000)
-			pcall(function()
-				gun.castRay:FireServer(ray, targetPos, target.player, target.targetPart)
-			end)
-		end
-	end
+		local ofs = Vector3.new(
+			(math.random() - 0.5) * 0.002,
+			(math.random() - 0.5) * 0.002,
+			(math.random() - 0.5) * 0.002
+		)
 
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local tool = char:FindFirstChildOfClass("Tool")
-	if hum and tool then
-		local ref = tool
-		hum:UnequipTools()
-		task.defer(function()
-			if ref and ref.Parent and hum and hum.Parent then
-				hum:EquipTool(ref)
+		if gun.type == "AWP" then
+			local origin = head.Position
+			local dirVec = targetPos - origin
+			if dirVec.Magnitude > 0.01 then
+				pcall(function()
+					gun.fireShot:FireServer(origin + ofs, dirVec.Unit, cur.targetPart)
+				end)
 			end
-		end)
+		elseif gun.type == "CastRay" then
+			if gun.hole and gun.hole.Parent then
+				local origin = gun.hole.Position
+				local dirVec = targetPos - origin
+				if dirVec.Magnitude > 0.01 then
+					local ray = Ray.new(origin + ofs, dirVec.Unit * 1000)
+					pcall(function()
+						gun.castRay:FireServer(ray, targetPos, cur.player, cur.targetPart)
+					end)
+				end
+			end
+		end
 	end
 end
 

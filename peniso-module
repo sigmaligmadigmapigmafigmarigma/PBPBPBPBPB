@@ -653,22 +653,31 @@ end
 -- ============================================
 function RageModule:RapidFireBurst(gun, initialTarget)
 	local char = self.player.Character
-	local head = char and char:FindFirstChild("Head")
+	if not char then return end
+	local head = char:FindFirstChild("Head")
 	if not head then return end
 
 	local shots = math.floor(self.RAPIDFIRE_SHOTS)
 	local cur = initialTarget
 
 	for i = 1, shots do
-		local hum = cur.character and cur.character:FindFirstChildOfClass("Humanoid")
-		if not hum or hum.Health <= 0 or not cur.rootPart or not cur.rootPart.Parent then
+		local hum = cur and cur.character and cur.character:FindFirstChildOfClass("Humanoid")
+		if not cur or not hum or hum.Health <= 0 or not cur.rootPart or not cur.rootPart.Parent then
 			cur = self:FindTarget()
 			if not cur then break end
 		end
 
-		local targetPos = self.PREDICTION_ENABLED
-			and self:PredictPosition(cur.targetPart, cur.rootPart)
-			or cur.targetPart.Position
+		if not cur.targetPart or not cur.targetPart.Parent then
+			cur = self:FindTarget()
+			if not cur then break end
+		end
+
+		local ok2, targetPos = pcall(function()
+			return self.PREDICTION_ENABLED
+				and self:PredictPosition(cur.targetPart, cur.rootPart)
+				or cur.targetPart.Position
+		end)
+		if not ok2 or not targetPos then break end
 
 		local ofs = Vector3.new(
 			(math.random() - 0.5) * 0.002,
@@ -696,6 +705,18 @@ function RageModule:RapidFireBurst(gun, initialTarget)
 				end
 			end
 		end
+	end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local tool = char:FindFirstChildOfClass("Tool")
+	if hum and tool then
+		local ref = tool
+		hum:UnequipTools()
+		task.defer(function()
+			if ref and ref.Parent and hum and hum.Parent then
+				hum:EquipTool(ref)
+			end
+		end)
 	end
 end
 

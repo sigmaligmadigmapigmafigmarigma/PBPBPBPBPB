@@ -97,15 +97,15 @@ self.GHOST_FADE_POWER = 1.2
 
 	self.CHINA_HAT_ENABLED = false
 	self.CHINA_HAT_COLOR = Color3.fromRGB(255, 255, 255)
-	self._chinaHatPart = nil
+	self._chinaHatParts = {}
 
 	self.WINGS_ENABLED = false
 	self.WINGS_COLOR = Color3.fromRGB(255, 255, 255)
-	self._wingParts = {}
+	self._wingData = nil
 
 	self.AURA_ENABLED = false
 	self.AURA_COLOR = Color3.fromRGB(255, 255, 255)
-	self._auraEmitter = nil
+	self._auraData = nil
 
 	self.JUMP_CIRCLES_ENABLED = false
 	self.JUMP_CIRCLES_COLOR = Color3.fromRGB(255, 255, 255)
@@ -762,41 +762,78 @@ function VisualsModule:SpawnChinaHat()
 	local head = char:FindFirstChild("Head")
 	if not head then return end
 
-	local hat = Instance.new("Part")
-	hat.Name = "ArcChinaHat"
-	hat.Size = Vector3.new(2.4, 0.6, 2.4)
-	hat.Shape = Enum.PartType.Cylinder
-	hat.Material = Enum.Material.Neon
-	hat.Color = self.CHINA_HAT_COLOR
-	hat.Anchored = false
-	hat.CanCollide = false
-	hat.CanTouch = false
-	hat.CanQuery = false
-	hat.CastShadow = false
-	hat.Massless = true
+	local parts = {}
+	local SLICES = 8
+	local RADIUS = 1.6
+	local HEIGHT = 1.0
 
-	local mesh = Instance.new("SpecialMesh")
-	mesh.MeshType = Enum.MeshType.FileMesh
-	mesh.MeshId = "rbxassetid://1028713"
-	mesh.Scale = Vector3.new(1.3, 0.9, 1.3)
-	mesh.Parent = hat
+	for i = 1, SLICES do
+		local angle = (i - 1) * (math.pi * 2 / SLICES)
+		local nextAngle = i * (math.pi * 2 / SLICES)
+		local midAngle = (angle + nextAngle) / 2
 
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = head
-	weld.Part1 = hat
-	weld.Parent = hat
+		local wedge = Instance.new("WedgePart")
+		wedge.Name = "ArcHatSlice"
+		wedge.Material = Enum.Material.SmoothPlastic
+		wedge.Color = self.CHINA_HAT_COLOR
+		wedge.Anchored = false
+		wedge.CanCollide = false
+		wedge.CanTouch = false
+		wedge.CanQuery = false
+		wedge.CastShadow = false
+		wedge.Massless = true
+		wedge.Transparency = 0.05
 
-	hat.CFrame = head.CFrame * CFrame.new(0, 0.85, 0)
-	hat.Parent = char
+		local sliceWidth = 2 * RADIUS * math.sin(math.pi / SLICES)
+		wedge.Size = Vector3.new(sliceWidth, HEIGHT, RADIUS)
 
-	self._chinaHatPart = hat
+		local cf = head.CFrame
+			* CFrame.new(0, 0.6, 0)
+			* CFrame.Angles(0, midAngle, 0)
+			* CFrame.new(0, 0, -RADIUS / 2)
+			* CFrame.Angles(0, 0, 0)
+
+		wedge.CFrame = cf
+		wedge.Parent = char
+
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = head
+		weld.Part1 = wedge
+		weld.Parent = wedge
+
+		table.insert(parts, wedge)
+	end
+
+	local brim = Instance.new("Part")
+	brim.Name = "ArcHatBrim"
+	brim.Shape = Enum.PartType.Cylinder
+	brim.Size = Vector3.new(0.06, RADIUS * 2.3, RADIUS * 2.3)
+	brim.Material = Enum.Material.SmoothPlastic
+	brim.Color = self.CHINA_HAT_COLOR
+	brim.Anchored = false
+	brim.CanCollide = false
+	brim.CanTouch = false
+	brim.CanQuery = false
+	brim.CastShadow = false
+	brim.Massless = true
+	brim.Transparency = 0.05
+	brim.CFrame = head.CFrame * CFrame.new(0, 0.58, 0) * CFrame.Angles(0, 0, math.rad(90))
+	brim.Parent = char
+
+	local brimWeld = Instance.new("WeldConstraint")
+	brimWeld.Part0 = head
+	brimWeld.Part1 = brim
+	brimWeld.Parent = brim
+
+	table.insert(parts, brim)
+	self._chinaHatParts = parts
 end
 
 function VisualsModule:DestroyChinaHat()
-	if self._chinaHatPart and self._chinaHatPart.Parent then
-		self._chinaHatPart:Destroy()
+	for _, p in ipairs(self._chinaHatParts) do
+		if p and p.Parent then p:Destroy() end
 	end
-	self._chinaHatPart = nil
+	self._chinaHatParts = {}
 end
 
 function VisualsModule:SpawnWings()
@@ -806,49 +843,97 @@ function VisualsModule:SpawnWings()
 	local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
 	if not torso then return end
 
-	local parts = {}
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcWings"
+	folder.Parent = char
 
-	local function makeFeather(cf, size)
+	local featherDefs = {
+		{side = -1, x = 1.0, y = 0.7, z = 0.5, rx = 5, ry = 15, flapMult = 1.0, size = Vector3.new(0.08, 2.0, 1.5)},
+		{side = -1, x = 1.8, y = 0.4, z = 0.6, rx = 3, ry = 20, flapMult = 1.15, size = Vector3.new(0.07, 2.6, 1.2)},
+		{side = -1, x = 2.5, y = 0.0, z = 0.7, rx = 0, ry = 25, flapMult = 1.3, size = Vector3.new(0.06, 2.8, 0.9)},
+		{side = -1, x = 3.0, y = -0.4, z = 0.8, rx = -3, ry = 28, flapMult = 1.45, size = Vector3.new(0.05, 2.2, 0.7)},
+		{side = 1, x = 1.0, y = 0.7, z = 0.5, rx = 5, ry = 15, flapMult = 1.0, size = Vector3.new(0.08, 2.0, 1.5)},
+		{side = 1, x = 1.8, y = 0.4, z = 0.6, rx = 3, ry = 20, flapMult = 1.15, size = Vector3.new(0.07, 2.6, 1.2)},
+		{side = 1, x = 2.5, y = 0.0, z = 0.7, rx = 0, ry = 25, flapMult = 1.3, size = Vector3.new(0.06, 2.8, 0.9)},
+		{side = 1, x = 3.0, y = -0.4, z = 0.8, rx = -3, ry = 28, flapMult = 1.45, size = Vector3.new(0.05, 2.2, 0.7)},
+	}
+
+	local feathers = {}
+	for _, def in ipairs(featherDefs) do
 		local p = Instance.new("WedgePart")
 		p.Name = "ArcWingFeather"
-		p.Size = size
+		p.Size = def.size
 		p.Material = Enum.Material.Neon
 		p.Color = self.WINGS_COLOR
-		p.Anchored = false
+		p.Anchored = true
 		p.CanCollide = false
 		p.CanTouch = false
 		p.CanQuery = false
 		p.CastShadow = false
-		p.Massless = true
-		p.Transparency = 0.15
-		p.CFrame = torso.CFrame * cf
-		p.Parent = char
+		p.Transparency = 0.1
+		p.Parent = folder
 
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = torso
-		weld.Part1 = p
-		weld.Parent = p
+		local trail = Instance.new("Trail")
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, def.size.Y * 0.4, 0)
+		a0.Parent = p
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, -def.size.Y * 0.4, 0)
+		a1.Parent = p
+		trail.Attachment0 = a0
+		trail.Attachment1 = a1
+		trail.Color = ColorSequence.new(self.WINGS_COLOR)
+		trail.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.6),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		trail.Lifetime = 0.3
+		trail.FaceCamera = true
+		trail.LightEmission = 0.5
+		trail.Parent = p
 
-		table.insert(parts, p)
-		return p
+		table.insert(feathers, {part = p, def = def, trail = trail})
 	end
 
-	makeFeather(CFrame.new(-1.2, 0.6, 0.5) * CFrame.Angles(math.rad(10), math.rad(200), math.rad(-15)), Vector3.new(0.12, 2.2, 1.4))
-	makeFeather(CFrame.new(-2.0, 0.3, 0.7) * CFrame.Angles(math.rad(5), math.rad(210), math.rad(-25)), Vector3.new(0.10, 2.8, 1.0))
-	makeFeather(CFrame.new(-2.6, -0.1, 0.9) * CFrame.Angles(math.rad(0), math.rad(215), math.rad(-35)), Vector3.new(0.08, 2.4, 0.8))
+	local conn = self.RunService.Heartbeat:Connect(function()
+		if not torso or not torso.Parent then
+			self:DestroyWings()
+			return
+		end
+		local t = tick()
+		local torsoCF = torso.CFrame
+		local flapBase = math.sin(t * 3.0) * 12
 
-	makeFeather(CFrame.new(1.2, 0.6, 0.5) * CFrame.Angles(math.rad(10), math.rad(-20), math.rad(15)), Vector3.new(0.12, 2.2, 1.4))
-	makeFeather(CFrame.new(2.0, 0.3, 0.7) * CFrame.Angles(math.rad(5), math.rad(-30), math.rad(25)), Vector3.new(0.10, 2.8, 1.0))
-	makeFeather(CFrame.new(2.6, -0.1, 0.9) * CFrame.Angles(math.rad(0), math.rad(-35), math.rad(35)), Vector3.new(0.08, 2.4, 0.8))
+		for _, f in ipairs(feathers) do
+			local d = f.def
+			local s = d.side
+			local flapAngle = flapBase * d.flapMult
+			local breathe = math.sin(t * 1.5 + d.x) * 2
 
-	self._wingParts = parts
+			local localCF = CFrame.new(s * d.x, d.y, d.z)
+				* CFrame.Angles(math.rad(d.rx + breathe), math.rad(s * d.ry), math.rad(s * (flapAngle - 10)))
+
+			f.part.CFrame = torsoCF * localCF
+		end
+	end)
+
+	self._wingData = {
+		folder = folder,
+		feathers = feathers,
+		conn = conn,
+	}
 end
 
 function VisualsModule:DestroyWings()
-	for _, w in ipairs(self._wingParts) do
-		if w and w.Parent then w:Destroy() end
+	if self._wingData then
+		if self._wingData.conn then
+			self._wingData.conn:Disconnect()
+		end
+		if self._wingData.folder and self._wingData.folder.Parent then
+			self._wingData.folder:Destroy()
+		end
+		self._wingData = nil
 	end
-	self._wingParts = {}
 end
 
 function VisualsModule:SpawnAura()
@@ -862,16 +947,16 @@ function VisualsModule:SpawnAura()
 	folder.Name = "ArcAura"
 	folder.Parent = char
 
-	local NUM_ORBS = 5
-	local RADIUS = 3.2
-	local ORB_SIZE = Vector3.new(0.35, 0.35, 0.35)
+	local NUM_MAIN = 5
+	local NUM_INNER = 3
+	local RADIUS_MAIN = 3.2
+	local RADIUS_INNER = 1.8
 
-	local orbs = {}
-	for i = 1, NUM_ORBS do
+	local function makeOrb(name, size, transp)
 		local orb = Instance.new("Part")
-		orb.Name = "AuraOrb_" .. i
+		orb.Name = name
 		orb.Shape = Enum.PartType.Ball
-		orb.Size = ORB_SIZE
+		orb.Size = Vector3.new(size, size, size)
 		orb.Material = Enum.Material.Neon
 		orb.Color = self.AURA_COLOR
 		orb.Anchored = true
@@ -879,36 +964,79 @@ function VisualsModule:SpawnAura()
 		orb.CanTouch = false
 		orb.CanQuery = false
 		orb.CastShadow = false
-		orb.Transparency = 0.3
+		orb.Transparency = transp
 
 		local light = Instance.new("PointLight")
 		light.Color = self.AURA_COLOR
 		light.Range = 4
-		light.Brightness = 0.5
+		light.Brightness = 0.4
 		light.Parent = orb
 
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, 0.1, 0)
+		a0.Parent = orb
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, -0.1, 0)
+		a1.Parent = orb
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = a0
+		trail.Attachment1 = a1
+		trail.Color = ColorSequence.new(self.AURA_COLOR)
+		trail.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.4),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		trail.Lifetime = 0.5
+		trail.FaceCamera = true
+		trail.LightEmission = 0.7
+		trail.Parent = orb
+
 		orb.Parent = folder
-		table.insert(orbs, orb)
+		return orb
 	end
+
+	local mainOrbs = {}
+	for i = 1, NUM_MAIN do
+		table.insert(mainOrbs, makeOrb("AuraOrb_" .. i, 0.35, 0.25))
+	end
+
+	local innerOrbs = {}
+	for i = 1, NUM_INNER do
+		table.insert(innerOrbs, makeOrb("AuraInner_" .. i, 0.2, 0.4))
+	end
+
+	local groundRing = Instance.new("Part")
+	groundRing.Name = "AuraGroundRing"
+	groundRing.Shape = Enum.PartType.Cylinder
+	groundRing.Size = Vector3.new(0.05, RADIUS_MAIN * 2, RADIUS_MAIN * 2)
+	groundRing.Material = Enum.Material.Neon
+	groundRing.Color = self.AURA_COLOR
+	groundRing.Anchored = true
+	groundRing.CanCollide = false
+	groundRing.CanTouch = false
+	groundRing.CanQuery = false
+	groundRing.CastShadow = false
+	groundRing.Transparency = 0.85
+	groundRing.Parent = folder
 
 	local rising = Instance.new("ParticleEmitter")
 	rising.Name = "AuraRise"
 	rising.Color = ColorSequence.new(self.AURA_COLOR)
 	rising.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.15),
-		NumberSequenceKeypoint.new(0.5, 0.25),
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(0.5, 0.2),
 		NumberSequenceKeypoint.new(1, 0),
 	})
 	rising.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5),
-		NumberSequenceKeypoint.new(0.7, 0.7),
+		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(0.6, 0.6),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	rising.Lifetime = NumberRange.new(0.8, 1.5)
-	rising.Rate = 12
-	rising.Speed = NumberRange.new(1, 3)
-	rising.SpreadAngle = Vector2.new(30, 30)
-	rising.RotSpeed = NumberRange.new(-45, 45)
+	rising.Rate = 18
+	rising.Speed = NumberRange.new(1.5, 3.5)
+	rising.SpreadAngle = Vector2.new(20, 20)
+	rising.RotSpeed = NumberRange.new(-60, 60)
 	rising.LightEmission = 0.8
 	rising.LightInfluence = 0.1
 	rising.Texture = "rbxassetid://6490035152"
@@ -917,7 +1045,9 @@ function VisualsModule:SpawnAura()
 
 	self._auraData = {
 		folder = folder,
-		orbs = orbs,
+		mainOrbs = mainOrbs,
+		innerOrbs = innerOrbs,
+		groundRing = groundRing,
 		emitter = rising,
 		conn = nil,
 	}
@@ -929,14 +1059,34 @@ function VisualsModule:SpawnAura()
 		end
 		local t = tick()
 		local basePos = hrp.Position
-		for idx, orb in ipairs(orbs) do
+
+		for idx, orb in ipairs(mainOrbs) do
 			if orb and orb.Parent then
-				local angle = (t * 1.8) + (idx - 1) * (math.pi * 2 / NUM_ORBS)
-				local yOff = math.sin(t * 2.5 + idx) * 0.6
-				local x = math.cos(angle) * RADIUS
-				local z = math.sin(angle) * RADIUS
+				local angle = (t * 1.8) + (idx - 1) * (math.pi * 2 / NUM_MAIN)
+				local yOff = math.sin(t * 2.5 + idx * 1.3) * 0.7
+				local pulse = 0.35 + math.sin(t * 4 + idx) * 0.08
+				orb.Size = Vector3.new(pulse, pulse, pulse)
+				local x = math.cos(angle) * RADIUS_MAIN
+				local z = math.sin(angle) * RADIUS_MAIN
 				orb.CFrame = CFrame.new(basePos + Vector3.new(x, yOff, z))
 			end
+		end
+
+		for idx, orb in ipairs(innerOrbs) do
+			if orb and orb.Parent then
+				local angle = -(t * 2.8) + (idx - 1) * (math.pi * 2 / NUM_INNER)
+				local yOff = math.sin(t * 3.0 + idx * 2.1) * 0.4 + 1.0
+				local x = math.cos(angle) * RADIUS_INNER
+				local z = math.sin(angle) * RADIUS_INNER
+				orb.CFrame = CFrame.new(basePos + Vector3.new(x, yOff, z))
+			end
+		end
+
+		if groundRing and groundRing.Parent then
+			local ringPulse = RADIUS_MAIN * 2 + math.sin(t * 2) * 0.3
+			groundRing.Size = Vector3.new(0.05, ringPulse, ringPulse)
+			groundRing.CFrame = CFrame.new(basePos - Vector3.new(0, 2.8, 0)) * CFrame.Angles(0, 0, math.rad(90))
+			groundRing.Transparency = 0.82 + math.sin(t * 3) * 0.08
 		end
 	end)
 end
@@ -1686,8 +1836,8 @@ end
 
 function VisualsModule:SetChinaHatColor(value)
 	self.CHINA_HAT_COLOR = value
-	if self._chinaHatPart and self._chinaHatPart.Parent then
-		self._chinaHatPart.Color = value
+	for _, p in ipairs(self._chinaHatParts) do
+		if p and p.Parent then p.Color = value end
 	end
 end
 
@@ -1702,8 +1852,15 @@ end
 
 function VisualsModule:SetWingsColor(value)
 	self.WINGS_COLOR = value
-	for _, w in ipairs(self._wingParts) do
-		if w and w.Parent then w.Color = value end
+	if self._wingData then
+		for _, f in ipairs(self._wingData.feathers) do
+			if f.part and f.part.Parent then
+				f.part.Color = value
+			end
+			if f.trail then
+				f.trail.Color = ColorSequence.new(value)
+			end
+		end
 	end
 end
 
@@ -1719,12 +1876,19 @@ end
 function VisualsModule:SetAuraColor(value)
 	self.AURA_COLOR = value
 	if self._auraData then
-		for _, orb in ipairs(self._auraData.orbs) do
+		local function colorOrb(orb)
 			if orb and orb.Parent then
 				orb.Color = value
 				local light = orb:FindFirstChildOfClass("PointLight")
 				if light then light.Color = value end
+				local trail = orb:FindFirstChildOfClass("Trail")
+				if trail then trail.Color = ColorSequence.new(value) end
 			end
+		end
+		for _, orb in ipairs(self._auraData.mainOrbs) do colorOrb(orb) end
+		for _, orb in ipairs(self._auraData.innerOrbs) do colorOrb(orb) end
+		if self._auraData.groundRing and self._auraData.groundRing.Parent then
+			self._auraData.groundRing.Color = value
 		end
 		if self._auraData.emitter and self._auraData.emitter.Parent then
 			self._auraData.emitter.Color = ColorSequence.new(value)

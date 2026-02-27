@@ -594,6 +594,25 @@ function RageModule:DoubleTapFire(gun, target)
 end
 
 -- ============================================
+-- RAPIDFIRE RE-EQUIP
+-- ============================================
+function RageModule:RapidFireReEquip()
+	local char = self.player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local tool = char:FindFirstChildOfClass("Tool")
+	if hum and tool then
+		local ref = tool
+		hum:UnequipTools()
+		task.defer(function()
+			if ref and ref.Parent and hum and hum.Parent then
+				hum:EquipTool(ref)
+			end
+		end)
+	end
+end
+
+-- ============================================
 -- RAPIDFIRE BURST
 -- ============================================
 function RageModule:RapidFireBurst(gun)
@@ -619,6 +638,8 @@ function RageModule:RapidFireBurst(gun)
 			pcall(function()
 				self:FireWeapon(curGun, tPos, tgt)
 			end)
+
+			self:RapidFireReEquip()
 
 			if i < self.RAPIDFIRE_SHOTS then
 				task.wait(0.06 + math.random() * 0.02)

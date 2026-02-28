@@ -598,42 +598,32 @@ end
 function World:FindChatRemote()
 	if self._chatRemote then return self._chatRemote end
 
-	local function searchFor(parent, names)
-		for _, name in ipairs(names) do
-			local found = parent:FindFirstChild(name)
-			if found then return found end
-		end
+	local function deepSearch(parent, depth)
+		if depth > 3 then return nil end
 		for _, child in pairs(parent:GetChildren()) do
 			local n = child.Name:lower()
-			if n:find("chat") or n:find("message") or n:find("msg") then
-				if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+			if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+				if n:find("chat") or n:find("message") or n:find("msg")
+					or n:find("send") or n:find("say") or n:find("talk") then
 					return child
 				end
-				if child:IsA("Folder") or child:IsA("Configuration") then
-					for _, sub in pairs(child:GetChildren()) do
-						local sn = sub.Name:lower()
-						if (sn:find("send") or sn:find("say") or sn:find("msg") or sn:find("chat"))
-							and (sub:IsA("RemoteEvent") or sub:IsA("RemoteFunction")) then
-							return sub
-						end
-					end
-				end
+			end
+			if child:IsA("Folder") or child:IsA("Configuration") or child:IsA("ModuleScript") then
+				local found = deepSearch(child, depth + 1)
+				if found then return found end
 			end
 		end
 		return nil
 	end
 
-	local names = {
-		"ChatMessage", "SendMessage", "SendChat", "ChatRemote",
-		"chat", "Chat", "Message", "SendMsg", "SayMessage",
-		"DefaultChatSystemChatEvents",
-	}
-
-	local remote = searchFor(ReplicatedStorage, names)
-	if remote then
-		self._chatRemote = remote
-		return remote
+	local legacy = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if legacy then
+		local sayMsg = legacy:FindFirstChild("SayMessageRequest")
+		if sayMsg then self._chatRemote = sayMsg; return sayMsg end
 	end
+
+	local found = deepSearch(ReplicatedStorage, 0)
+	if found then self._chatRemote = found; return found end
 
 	return nil
 end
@@ -641,22 +631,24 @@ end
 function World:SendChat(msg)
 	if not msg or msg == "" then return end
 
+	local sent = false
+
 	pcall(function()
-		local textChannels = game:GetService("TextChatService"):FindFirstChild("TextChannels")
-		if textChannels then
-			local general = textChannels:FindFirstChild("RBXGeneral")
-			if general then
-				general:SendAsync(msg)
-				return
-			end
-			for _, ch in pairs(textChannels:GetChildren()) do
-				if ch:IsA("TextChannel") then
-					ch:SendAsync(msg)
-					return
+		local TCS = game:GetService("TextChatService")
+		if TCS then
+			local textChannels = TCS:FindFirstChild("TextChannels")
+			if textChannels then
+				for _, ch in pairs(textChannels:GetChildren()) do
+					if ch:IsA("TextChannel") then
+						ch:SendAsync(msg)
+						sent = true
+						return
+					end
 				end
 			end
 		end
 	end)
+	if sent then return end
 
 	pcall(function()
 		local legacy = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -664,18 +656,56 @@ function World:SendChat(msg)
 			local sayMsg = legacy:FindFirstChild("SayMessageRequest")
 			if sayMsg then
 				sayMsg:FireServer(msg, "All")
+				sent = true
 				return
 			end
 		end
 	end)
+	if sent then return end
 
 	pcall(function()
 		local remote = self:FindChatRemote()
 		if remote then
 			if remote:IsA("RemoteEvent") then
 				remote:FireServer(msg)
+				sent = true
 			elseif remote:IsA("RemoteFunction") then
 				remote:InvokeServer(msg)
+				sent = true
+			end
+		end
+	end)
+	if sent then return end
+
+	pcall(function()
+		local SSSService = game:GetService("StarterGui")
+		SSSService:SetCore("ChatMakeSystemMessage", {
+			Text = msg,
+			Color = Color3.fromRGB(255, 255, 255),
+		})
+	end)
+
+	pcall(function()
+		for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+			if v:IsA("RemoteEvent") then
+				local n = v.Name:lower()
+				if n:find("chat") or n:find("msg") or n:find("message") or n:find("say") or n:find("send") or n:find("talk") then
+					v:FireServer(msg, "All")
+					sent = true
+					return
+				end
+			end
+		end
+	end)
+	if sent then return end
+
+	pcall(function()
+		for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+			if v:IsA("RemoteEvent") then
+				pcall(function()
+					v:FireServer(msg)
+				end)
+				return
 			end
 		end
 	end)

@@ -152,7 +152,13 @@ end
 function VisualsModule:Initialize()
 	self.Camera = self.Workspace.CurrentCamera
 	self.FX_ROOT = self.ReplicatedStorage:WaitForChild("FXTemplates")
-	self.HITSOUND_STORAGE = self.guiParent:WaitForChild("ScreenGui"):WaitForChild("storage")
+	local playerGui = self.player:FindFirstChildOfClass("PlayerGui")
+	if playerGui then
+		local sg = playerGui:FindFirstChild("ScreenGui")
+		if sg then
+			self.HITSOUND_STORAGE = sg:FindFirstChild("storage")
+		end
+	end
 
 	self.ORIGINAL_EFFECTS = {
 		Atmosphere = self:SnapshotFirstEffect("Atmosphere"),

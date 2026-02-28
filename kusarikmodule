@@ -36,6 +36,7 @@ self.GHOST_FADE_POWER = 1.2
 	self.TRACER_LIFETIME = 0.45
 	self.TRACER_WIDTH = 0.12
 	self.TRACER_NEON = false
+	self.TRACER_STYLE = "Classic"
 
 	self.TRACER_BRIGHTNESS = 20
 	self.TRACER_LIGHTEMISSION = 1
@@ -473,8 +474,84 @@ arrow.ImageTransparency = 0.1 + pulse * 0.65
 	end)
 end
 
+function VisualsModule:CreateLightningTracer(startPos, endPos)
+	local distance = (endPos - startPos).Magnitude
+	if distance < 0.5 then return end
+
+	local folder = Instance.new("Folder")
+	folder.Name = "lightning_tracer"
+	folder.Parent = self.Workspace
+
+	local color = self.TRACER_COLOR
+	local dir = (endPos - startPos).Unit
+	local segments = math.clamp(math.floor(distance / 3), 4, 16)
+	local segLen = distance / segments
+	local jitter = 1.2
+
+	local points = {startPos}
+	for i = 1, segments - 1 do
+		local basePoint = startPos + dir * (segLen * i)
+		local right = dir:Cross(Vector3.new(0, 1, 0))
+		if right.Magnitude < 0.01 then right = dir:Cross(Vector3.new(1, 0, 0)) end
+		right = right.Unit
+		local up = dir:Cross(right).Unit
+		local offsetR = (math.random() - 0.5) * 2 * jitter
+		local offsetU = (math.random() - 0.5) * 2 * jitter
+		table.insert(points, basePoint + right * offsetR + up * offsetU)
+	end
+	table.insert(points, endPos)
+
+	for i = 1, #points - 1 do
+		local p1 = points[i]
+		local p2 = points[i + 1]
+		local mid = (p1 + p2) / 2
+		local len = (p2 - p1).Magnitude
+
+		local seg = Instance.new("Part")
+		seg.Name = "BoltSeg"
+		seg.Anchored = true
+		seg.CanCollide = false
+		seg.CanQuery = false
+		seg.CanTouch = false
+		seg.CastShadow = false
+		seg.Material = Enum.Material.Neon
+		seg.Color = color
+		seg.Size = Vector3.new(0.08, 0.08, len)
+		seg.CFrame = CFrame.lookAt(mid, p2)
+		seg.Transparency = 0.1
+		seg.Parent = folder
+
+		if i == 1 or i == #points - 1 then
+			local glow = Instance.new("PointLight")
+			glow.Color = color
+			glow.Range = 6
+			glow.Brightness = 1
+			glow.Parent = seg
+		end
+	end
+
+	local lifetime = self.TRACER_LIFETIME * 0.7
+	task.delay(lifetime * 0.3, function()
+		for _, child in pairs(folder:GetChildren()) do
+			if child:IsA("BasePart") then
+				self.TweenService:Create(child,
+					TweenInfo.new(lifetime * 0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{Transparency = 1}
+				):Play()
+			end
+		end
+	end)
+
+	self.Debris:AddItem(folder, lifetime + 0.2)
+end
+
 function VisualsModule:CreateTracer(startPos, endPos)
 	if not self.TRACER_ENABLED then return end
+
+	if self.TRACER_STYLE == "Lightning" then
+		self:CreateLightningTracer(startPos, endPos)
+		return
+	end
 
 	local distance = (endPos - startPos).Magnitude
 	if distance < 0.5 then return end
@@ -848,91 +925,97 @@ function VisualsModule:SpawnWings()
 	folder.Parent = char
 
 	local allParts = {}
+	local allTrails = {}
 
-	local spineDefs = {
-		{side = -1, x = 0.6, y = 0.8, z = 0.45, ry = 10, flapMult = 0.8, len = 1.6},
-		{side = -1, x = 1.4, y = 0.5, z = 0.55, ry = 18, flapMult = 1.0, len = 2.4},
-		{side = -1, x = 2.2, y = 0.1, z = 0.65, ry = 24, flapMult = 1.2, len = 2.8},
-		{side = -1, x = 2.9, y = -0.3, z = 0.75, ry = 28, flapMult = 1.4, len = 2.2},
-		{side = -1, x = 3.3, y = -0.7, z = 0.8, ry = 32, flapMult = 1.55, len = 1.5},
-		{side = 1, x = 0.6, y = 0.8, z = 0.45, ry = 10, flapMult = 0.8, len = 1.6},
-		{side = 1, x = 1.4, y = 0.5, z = 0.55, ry = 18, flapMult = 1.0, len = 2.4},
-		{side = 1, x = 2.2, y = 0.1, z = 0.65, ry = 24, flapMult = 1.2, len = 2.8},
-		{side = 1, x = 2.9, y = -0.3, z = 0.75, ry = 28, flapMult = 1.4, len = 2.2},
-		{side = 1, x = 3.3, y = -0.7, z = 0.8, ry = 32, flapMult = 1.55, len = 1.5},
+	local featherDefs = {
+		{side = -1, x = 0.5, y = 0.9, z = 0.4, ry = 8,  flapMult = 0.7, w = 0.8, h = 1.4, d = 0.15},
+		{side = -1, x = 1.1, y = 0.7, z = 0.5, ry = 14, flapMult = 0.85, w = 1.0, h = 2.0, d = 0.12},
+		{side = -1, x = 1.8, y = 0.4, z = 0.55, ry = 20, flapMult = 1.0, w = 1.1, h = 2.5, d = 0.10},
+		{side = -1, x = 2.4, y = 0.0, z = 0.6, ry = 25, flapMult = 1.15, w = 1.0, h = 2.8, d = 0.08},
+		{side = -1, x = 2.9, y = -0.4, z = 0.65, ry = 30, flapMult = 1.3, w = 0.8, h = 2.4, d = 0.07},
+		{side = -1, x = 3.3, y = -0.8, z = 0.7, ry = 34, flapMult = 1.45, w = 0.6, h = 1.7, d = 0.06},
+		{side = 1, x = 0.5, y = 0.9, z = 0.4, ry = 8,  flapMult = 0.7, w = 0.8, h = 1.4, d = 0.15},
+		{side = 1, x = 1.1, y = 0.7, z = 0.5, ry = 14, flapMult = 0.85, w = 1.0, h = 2.0, d = 0.12},
+		{side = 1, x = 1.8, y = 0.4, z = 0.55, ry = 20, flapMult = 1.0, w = 1.1, h = 2.5, d = 0.10},
+		{side = 1, x = 2.4, y = 0.0, z = 0.6, ry = 25, flapMult = 1.15, w = 1.0, h = 2.8, d = 0.08},
+		{side = 1, x = 2.9, y = -0.4, z = 0.65, ry = 30, flapMult = 1.3, w = 0.8, h = 2.4, d = 0.07},
+		{side = 1, x = 3.3, y = -0.8, z = 0.7, ry = 34, flapMult = 1.45, w = 0.6, h = 1.7, d = 0.06},
 	}
 
-	local spines = {}
-	for _, def in ipairs(spineDefs) do
-		local spine = Instance.new("Part")
-		spine.Name = "ArcWingSpine"
-		spine.Size = Vector3.new(0.06, def.len, 0.06)
-		spine.Material = Enum.Material.Neon
-		spine.Color = self.WINGS_COLOR
-		spine.Anchored = true
-		spine.CanCollide = false
-		spine.CanTouch = false
-		spine.CanQuery = false
-		spine.CastShadow = false
-		spine.Transparency = 0.05
-		spine.Parent = folder
-		table.insert(allParts, spine)
-		table.insert(spines, {part = spine, def = def})
-	end
+	local feathers = {}
+	for _, def in ipairs(featherDefs) do
+		local feather = Instance.new("Part")
+		feather.Name = "ArcFeather"
+		feather.Size = Vector3.new(def.d, def.h, def.w)
+		feather.Material = Enum.Material.Neon
+		feather.Color = self.WINGS_COLOR
+		feather.Anchored = true
+		feather.CanCollide = false
+		feather.CanTouch = false
+		feather.CanQuery = false
+		feather.CastShadow = false
+		feather.Transparency = 0.15
+		feather.Parent = folder
+		table.insert(allParts, feather)
 
-	local membraneDefs = {
-		{side = -1, idx1 = 1, idx2 = 2, flapMult = 0.9},
-		{side = -1, idx1 = 2, idx2 = 3, flapMult = 1.1},
-		{side = -1, idx1 = 3, idx2 = 4, flapMult = 1.3},
-		{side = -1, idx1 = 4, idx2 = 5, flapMult = 1.5},
-		{side = 1, idx1 = 6, idx2 = 7, flapMult = 0.9},
-		{side = 1, idx1 = 7, idx2 = 8, flapMult = 1.1},
-		{side = 1, idx1 = 8, idx2 = 9, flapMult = 1.3},
-		{side = 1, idx1 = 9, idx2 = 10, flapMult = 1.5},
-	}
-
-	local membranes = {}
-	for _, mdef in ipairs(membraneDefs) do
-		local mem = Instance.new("Part")
-		mem.Name = "ArcWingMembrane"
-		mem.Size = Vector3.new(0.04, 2, 1)
-		mem.Material = Enum.Material.Neon
-		mem.Color = self.WINGS_COLOR
-		mem.Anchored = true
-		mem.CanCollide = false
-		mem.CanTouch = false
-		mem.CanQuery = false
-		mem.CastShadow = false
-		mem.Transparency = 0.45
-		mem.Parent = folder
-		table.insert(allParts, mem)
-		table.insert(membranes, {part = mem, def = mdef})
-	end
-
-	local tipTrails = {}
-	for _, sideVal in ipairs({-1, 1}) do
-		local tipIdx = sideVal == -1 and 5 or 10
-		local tip = spines[tipIdx].part
 		local a0 = Instance.new("Attachment")
-		a0.Position = Vector3.new(0, tip.Size.Y * 0.45, 0)
-		a0.Parent = tip
+		a0.Position = Vector3.new(0, def.h * 0.4, 0)
+		a0.Parent = feather
 		local a1 = Instance.new("Attachment")
-		a1.Position = Vector3.new(0, -tip.Size.Y * 0.45, 0)
-		a1.Parent = tip
+		a1.Position = Vector3.new(0, -def.h * 0.4, 0)
+		a1.Parent = feather
 		local trail = Instance.new("Trail")
 		trail.Attachment0 = a0
 		trail.Attachment1 = a1
 		trail.Color = ColorSequence.new(self.WINGS_COLOR)
 		trail.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.5),
+			NumberSequenceKeypoint.new(0, 0.55),
 			NumberSequenceKeypoint.new(1, 1),
 		})
-		trail.Lifetime = 0.4
+		trail.Lifetime = 0.35
 		trail.FaceCamera = true
-		trail.LightEmission = 0.6
-		trail.Parent = tip
-		table.insert(tipTrails, trail)
+		trail.LightEmission = 0.7
+		trail.Parent = feather
+		table.insert(allTrails, trail)
+
+		table.insert(feathers, {part = feather, def = def})
 	end
+
+	local glowPart = Instance.new("Part")
+	glowPart.Name = "ArcWingGlow"
+	glowPart.Size = Vector3.new(0.5, 0.5, 0.5)
+	glowPart.Transparency = 1
+	glowPart.Anchored = true
+	glowPart.CanCollide = false
+	glowPart.CanQuery = false
+	glowPart.Parent = folder
+
+	local glow = Instance.new("PointLight")
+	glow.Color = self.WINGS_COLOR
+	glow.Range = 8
+	glow.Brightness = 0.6
+	glow.Parent = glowPart
+
+	local particles = Instance.new("ParticleEmitter")
+	particles.Color = ColorSequence.new(self.WINGS_COLOR)
+	particles.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.08),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	particles.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	particles.Lifetime = NumberRange.new(0.3, 0.8)
+	particles.Rate = 15
+	particles.Speed = NumberRange.new(0.5, 2)
+	particles.SpreadAngle = Vector2.new(180, 180)
+	particles.LightEmission = 0.9
+	particles.LightInfluence = 0
+	particles.Texture = "rbxassetid://6490035152"
+	particles.Parent = glowPart
+
+	table.insert(allParts, glowPart)
 
 	local conn = self.RunService.Heartbeat:Connect(function()
 		if not torso or not torso.Parent then
@@ -941,36 +1024,34 @@ function VisualsModule:SpawnWings()
 		end
 		local t = tick()
 		local torsoCF = torso.CFrame
-		local flapBase = math.sin(t * 3.0) * 14
+		local flapBase = math.sin(t * 2.5) * 12
 
-		for _, s in ipairs(spines) do
-			local d = s.def
+		for _, f in ipairs(feathers) do
+			local d = f.def
 			local side = d.side
 			local flapAngle = flapBase * d.flapMult
-			local breathe = math.sin(t * 1.8 + d.x * 0.7) * 2.5
+			local breathe = math.sin(t * 1.5 + d.x * 0.6) * 2
+			local flutter = math.sin(t * 5 + d.x * 3) * 0.8 * d.flapMult
 
 			local localCF = CFrame.new(side * d.x, d.y, d.z)
-				* CFrame.Angles(math.rad(breathe), math.rad(side * d.ry), math.rad(side * (flapAngle - 8)))
+				* CFrame.Angles(
+					math.rad(breathe + flutter),
+					math.rad(side * d.ry),
+					math.rad(side * (flapAngle - 10))
+				)
 
-			s.part.CFrame = torsoCF * localCF
+			f.part.CFrame = torsoCF * localCF
 		end
 
-		for _, m in ipairs(membranes) do
-			local s1 = spines[m.def.idx1].part
-			local s2 = spines[m.def.idx2].part
-			local mid = s1.CFrame:Lerp(s2.CFrame, 0.5)
-			local dist = (s1.Position - s2.Position).Magnitude
-			local height = math.max(s1.Size.Y, s2.Size.Y) * 0.85
-			m.part.Size = Vector3.new(0.04, height, math.max(dist * 0.85, 0.3))
-			m.part.CFrame = mid
-		end
+		glowPart.CFrame = torsoCF * CFrame.new(0, 0.2, 0.5)
 	end)
 
 	self._wingData = {
 		folder = folder,
 		allParts = allParts,
-		spines = spines,
-		tipTrails = tipTrails,
+		allTrails = allTrails,
+		glow = glow,
+		particles = particles,
 		conn = conn,
 	}
 end
@@ -1056,20 +1137,6 @@ function VisualsModule:SpawnAura()
 		table.insert(innerOrbs, makeOrb("AuraInner_" .. i, 0.2, 0.4))
 	end
 
-	local groundRing = Instance.new("Part")
-	groundRing.Name = "AuraGroundRing"
-	groundRing.Shape = Enum.PartType.Cylinder
-	groundRing.Size = Vector3.new(0.05, RADIUS_MAIN * 2, RADIUS_MAIN * 2)
-	groundRing.Material = Enum.Material.Neon
-	groundRing.Color = self.AURA_COLOR
-	groundRing.Anchored = true
-	groundRing.CanCollide = false
-	groundRing.CanTouch = false
-	groundRing.CanQuery = false
-	groundRing.CastShadow = false
-	groundRing.Transparency = 0.85
-	groundRing.Parent = folder
-
 	local rising = Instance.new("ParticleEmitter")
 	rising.Name = "AuraRise"
 	rising.Color = ColorSequence.new(self.AURA_COLOR)
@@ -1098,7 +1165,6 @@ function VisualsModule:SpawnAura()
 		folder = folder,
 		mainOrbs = mainOrbs,
 		innerOrbs = innerOrbs,
-		groundRing = groundRing,
 		emitter = rising,
 		conn = nil,
 	}
@@ -1133,12 +1199,6 @@ function VisualsModule:SpawnAura()
 			end
 		end
 
-		if groundRing and groundRing.Parent then
-			local ringPulse = RADIUS_MAIN * 2 + math.sin(t * 2) * 0.3
-			groundRing.Size = Vector3.new(0.05, ringPulse, ringPulse)
-			groundRing.CFrame = CFrame.new(basePos - Vector3.new(0, 2.8, 0)) * CFrame.Angles(0, 0, math.rad(90))
-			groundRing.Transparency = 0.82 + math.sin(t * 3) * 0.08
-		end
 	end)
 end
 
@@ -1159,31 +1219,51 @@ end
 
 function VisualsModule:ConnectJumpCircles()
 	self:DisconnectJumpCircles()
-	local char = self.player.Character
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
 
-	self._jumpConn = hum.StateChanged:Connect(function(_, newState)
-		if newState == Enum.HumanoidStateType.Jumping then
-			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				self:SpawnJumpCircle(hrp.Position - Vector3.new(0, 3, 0))
-			end
+	local function hookChar(char)
+		if self._jumpHumConn then
+			pcall(function() self._jumpHumConn:Disconnect() end)
 		end
+		local hum = char:WaitForChild("Humanoid", 10)
+		if not hum then return end
+		self._jumpHumConn = hum.StateChanged:Connect(function(_, newState)
+			if not self.JUMP_CIRCLES_ENABLED then return end
+			if newState == Enum.HumanoidStateType.Jumping then
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					self:SpawnJumpCircle(hrp.Position - Vector3.new(0, 3, 0))
+				end
+			end
+		end)
+	end
+
+	if self.player.Character then
+		task.spawn(function() hookChar(self.player.Character) end)
+	end
+	self._jumpCharConn = self.player.CharacterAdded:Connect(function(c)
+		task.wait(0.3)
+		hookChar(c)
 	end)
 end
 
 function VisualsModule:DisconnectJumpCircles()
-	if self._jumpConn then
-		self._jumpConn:Disconnect()
-		self._jumpConn = nil
+	if self._jumpHumConn then
+		pcall(function() self._jumpHumConn:Disconnect() end)
+		self._jumpHumConn = nil
+	end
+	if self._jumpCharConn then
+		pcall(function() self._jumpCharConn:Disconnect() end)
+		self._jumpCharConn = nil
 	end
 end
 
 function VisualsModule:SpawnJumpCircle(position)
+	local color = self.JUMP_CIRCLES_COLOR
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcJumpCircle"
+	folder.Parent = self.Workspace
+
 	local ring = Instance.new("Part")
-	ring.Name = "ArcJumpCircle"
 	ring.Shape = Enum.PartType.Cylinder
 	ring.Anchored = true
 	ring.CanCollide = false
@@ -1191,81 +1271,170 @@ function VisualsModule:SpawnJumpCircle(position)
 	ring.CanQuery = false
 	ring.CastShadow = false
 	ring.Material = Enum.Material.Neon
-	ring.Color = self.JUMP_CIRCLES_COLOR
-	ring.Size = Vector3.new(0.08, 1, 1)
+	ring.Color = color
+	ring.Size = Vector3.new(0.06, 0.8, 0.8)
 	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
-	ring.Transparency = 0.3
-	ring.Parent = self.Workspace
+	ring.Transparency = 0.2
+	ring.Parent = folder
 
-	local expand = self.TweenService:Create(ring,
-		TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{Size = Vector3.new(0.08, 8, 8), Transparency = 1}
-	)
-	expand:Play()
-	expand.Completed:Connect(function()
-		ring:Destroy()
-	end)
-end
+	local inner = Instance.new("Part")
+	inner.Shape = Enum.PartType.Cylinder
+	inner.Anchored = true
+	inner.CanCollide = false
+	inner.CanTouch = false
+	inner.CanQuery = false
+	inner.CastShadow = false
+	inner.Material = Enum.Material.Neon
+	inner.Color = color
+	inner.Size = Vector3.new(0.04, 0.4, 0.4)
+	inner.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	inner.Transparency = 0
+	inner.Parent = folder
 
-function VisualsModule:PlaySparkleFX(position)
-	local part = Instance.new("Part")
-	part.Name = "ArcSparkleFX"
-	part.Size = Vector3.new(0.5, 0.5, 0.5)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.Transparency = 1
-	part.CFrame = CFrame.new(position)
-	part.Parent = self.Workspace
+	local spark = Instance.new("Part")
+	spark.Anchored = true
+	spark.CanCollide = false
+	spark.CanQuery = false
+	spark.Transparency = 1
+	spark.Size = Vector3.new(1, 1, 1)
+	spark.CFrame = CFrame.new(position)
+	spark.Parent = folder
 
 	local emitter = Instance.new("ParticleEmitter")
-	emitter.Color = ColorSequence.new(self.KILLFX_COLOR)
+	emitter.Color = ColorSequence.new(color)
 	emitter.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(0, 0.15),
 		NumberSequenceKeypoint.new(1, 0),
 	})
 	emitter.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.8, 0.3),
+		NumberSequenceKeypoint.new(0, 0.2),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	emitter.Lifetime = NumberRange.new(0.3, 0.7)
-	emitter.Speed = NumberRange.new(8, 18)
-	emitter.SpreadAngle = Vector2.new(360, 360)
+	emitter.Lifetime = NumberRange.new(0.3, 0.6)
 	emitter.Rate = 0
+	emitter.Speed = NumberRange.new(3, 8)
+	emitter.SpreadAngle = Vector2.new(360, 30)
 	emitter.LightEmission = 1
 	emitter.LightInfluence = 0
 	emitter.Texture = "rbxassetid://6490035152"
-	emitter.Parent = part
+	emitter.Parent = spark
+	emitter:Emit(20)
 
-	emitter:Emit(30)
+	self.TweenService:Create(ring,
+		TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(0.06, 7, 7), Transparency = 1}
+	):Play()
+	self.TweenService:Create(inner,
+		TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(0.04, 4, 4), Transparency = 1}
+	):Play()
+
+	self.Debris:AddItem(folder, 1)
+end
+
+function VisualsModule:PlaySparkleFX(position)
+	local white = Color3.fromRGB(255, 255, 255)
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcSparkleFX"
+	folder.Parent = self.Workspace
+
+	local base = Instance.new("Part")
+	base.Anchored = true
+	base.CanCollide = false
+	base.CanQuery = false
+	base.CanTouch = false
+	base.Transparency = 1
+	base.Size = Vector3.new(1, 1, 1)
+	base.CFrame = CFrame.new(position)
+	base.Parent = folder
+
+	local burst = Instance.new("ParticleEmitter")
+	burst.Color = ColorSequence.new(white)
+	burst.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(0.5, 0.3),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	burst.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.6, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	burst.Lifetime = NumberRange.new(0.4, 0.9)
+	burst.Speed = NumberRange.new(10, 22)
+	burst.SpreadAngle = Vector2.new(360, 360)
+	burst.Rate = 0
+	burst.RotSpeed = NumberRange.new(-200, 200)
+	burst.Rotation = NumberRange.new(-180, 180)
+	burst.LightEmission = 1
+	burst.LightInfluence = 0
+	burst.Texture = "rbxassetid://6490035152"
+	burst.Parent = base
+	burst:Emit(45)
+
+	local shimmer = Instance.new("ParticleEmitter")
+	shimmer.Color = ColorSequence.new(white)
+	shimmer.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	shimmer.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	shimmer.Lifetime = NumberRange.new(0.6, 1.2)
+	shimmer.Speed = NumberRange.new(2, 6)
+	shimmer.SpreadAngle = Vector2.new(360, 360)
+	shimmer.Rate = 0
+	shimmer.LightEmission = 1
+	shimmer.LightInfluence = 0
+	shimmer.Texture = "rbxassetid://6490035152"
+	shimmer.EmissionDirection = Enum.NormalId.Top
+	shimmer.Parent = base
+	shimmer:Emit(20)
+
+	local flash = Instance.new("Part")
+	flash.Shape = Enum.PartType.Ball
+	flash.Anchored = true
+	flash.CanCollide = false
+	flash.CanQuery = false
+	flash.CastShadow = false
+	flash.Material = Enum.Material.Neon
+	flash.Color = white
+	flash.Size = Vector3.new(1, 1, 1)
+	flash.CFrame = CFrame.new(position)
+	flash.Transparency = 0.3
+	flash.Parent = folder
+
+	self.TweenService:Create(flash,
+		TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(5, 5, 5), Transparency = 1}
+	):Play()
 
 	local light = Instance.new("PointLight")
-	light.Color = self.KILLFX_LIGHT_COLOR
-	light.Range = self.KILLFX_LIGHT_RANGE
-	light.Brightness = self.KILLFX_LIGHT_BRIGHTNESS
-	light.Parent = part
+	light.Color = white
+	light.Range = 18
+	light.Brightness = 2.5
+	light.Parent = base
+	self.TweenService:Create(light, TweenInfo.new(0.6), {Range = 0, Brightness = 0}):Play()
 
-	task.delay(0.1, function()
-		if light and light.Parent then
-			self.TweenService:Create(light, TweenInfo.new(0.5), {Range = 0}):Play()
-		end
-	end)
-
-	self.Debris:AddItem(part, 1.5)
+	self.Debris:AddItem(folder, 2)
 end
 
 function VisualsModule:PlayRingFX(position, victimChar)
+	local white = Color3.fromRGB(255, 255, 255)
 	local folder = Instance.new("Folder")
 	folder.Name = "ArcRingFX"
 	folder.Parent = self.Workspace
 
-	local white = Color3.fromRGB(255, 255, 255)
-	local NUM_RINGS = 3
 	local rings = {}
+	local ringConfigs = {
+		{tiltX = 0,  tiltZ = 0,  speed = 4.0, startSize = 3},
+		{tiltX = 60, tiltZ = 30, speed = 3.2, startSize = 3.5},
+		{tiltX = 30, tiltZ = 70, speed = 5.0, startSize = 2.5},
+	}
 
-	for i = 1, NUM_RINGS do
+	for i, cfg in ipairs(ringConfigs) do
 		local ring = Instance.new("Part")
 		ring.Name = "Ring_" .. i
 		ring.Shape = Enum.PartType.Cylinder
@@ -1276,17 +1445,17 @@ function VisualsModule:PlayRingFX(position, victimChar)
 		ring.CastShadow = false
 		ring.Material = Enum.Material.Neon
 		ring.Color = white
-		ring.Size = Vector3.new(0.08, 4, 4)
-		ring.Transparency = 0.2
+		ring.Size = Vector3.new(0.06, cfg.startSize, cfg.startSize)
+		ring.Transparency = 0.15
 		ring.Parent = folder
-		table.insert(rings, ring)
+		table.insert(rings, {part = ring, cfg = cfg})
 	end
 
 	local light = Instance.new("PointLight")
 	light.Color = white
-	light.Range = 20
-	light.Brightness = 2
-	light.Parent = rings[1]
+	light.Range = 22
+	light.Brightness = 2.5
+	light.Parent = rings[1].part
 
 	if victimChar then
 		for _, part in pairs(victimChar:GetDescendants()) do
@@ -1295,8 +1464,8 @@ function VisualsModule:PlayRingFX(position, victimChar)
 					part.Material = Enum.Material.Neon
 					part.Color = white
 					self.TweenService:Create(part,
-						TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-						{Transparency = 1, Size = part.Size * 0.3}
+						TweenInfo.new(1.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+						{Transparency = 1}
 					):Play()
 				end)
 			end
@@ -1307,34 +1476,29 @@ function VisualsModule:PlayRingFX(position, victimChar)
 	local conn
 	conn = self.RunService.Heartbeat:Connect(function()
 		local elapsed = tick() - startT
-		if elapsed > 2.2 then
+		if elapsed > 2.5 then
 			conn:Disconnect()
 			return
 		end
 
-		for i, ring in ipairs(rings) do
+		for _, r in ipairs(rings) do
+			local ring = r.part
+			local cfg = r.cfg
 			if ring and ring.Parent then
-				local speed = 3.5 + i * 0.8
-				local tiltX = (i - 1) * 55
-				local tiltZ = (i - 1) * 35
-				local rot = elapsed * speed
-				local expand = 4 + elapsed * 3
-				ring.Size = Vector3.new(0.08, expand, expand)
+				local rot = elapsed * cfg.speed
+				local sz = cfg.startSize + elapsed * 1.5
+				ring.Size = Vector3.new(0.06, sz, sz)
 				ring.CFrame = CFrame.new(position)
-					* CFrame.Angles(math.rad(tiltX), rot, math.rad(tiltZ))
+					* CFrame.Angles(math.rad(cfg.tiltX), rot, math.rad(cfg.tiltZ))
 					* CFrame.Angles(0, 0, math.rad(90))
-				ring.Transparency = 0.2 + math.clamp((elapsed - 1.2) / 1.0, 0, 0.8)
+				ring.Transparency = 0.15 + math.clamp((elapsed - 1.5) / 1.0, 0, 0.85)
 			end
 		end
 	end)
 
-	task.delay(1.0, function()
-		if light and light.Parent then
-			self.TweenService:Create(light, TweenInfo.new(1.2), {Range = 0, Brightness = 0}):Play()
-		end
-	end)
+	self.TweenService:Create(light, TweenInfo.new(2.0), {Range = 0, Brightness = 0}):Play()
 
-	self.Debris:AddItem(folder, 3)
+	self.Debris:AddItem(folder, 3.5)
 end
 
 function VisualsModule:PlayBeamFX(position, victimChar)
@@ -1343,10 +1507,11 @@ function VisualsModule:PlayBeamFX(position, victimChar)
 	folder.Name = "ArcBeamFX"
 	folder.Parent = self.Workspace
 
-	local skyPos = position + Vector3.new(0, 80, 0)
+	local BEAM_HEIGHT = 60
+	local midPos = position + Vector3.new(0, BEAM_HEIGHT / 2, 0)
 
 	local beam = Instance.new("Part")
-	beam.Name = "BeamColumn"
+	beam.Name = "BeamOuter"
 	beam.Anchored = true
 	beam.CanCollide = false
 	beam.CanQuery = false
@@ -1354,48 +1519,32 @@ function VisualsModule:PlayBeamFX(position, victimChar)
 	beam.CastShadow = false
 	beam.Material = Enum.Material.Neon
 	beam.Color = white
-	beam.Size = Vector3.new(3, 0.1, 3)
-	beam.CFrame = CFrame.new(skyPos)
-	beam.Transparency = 0
+	beam.Size = Vector3.new(2.5, BEAM_HEIGHT, 2.5)
+	beam.CFrame = CFrame.new(midPos)
+	beam.Transparency = 0.3
 	beam.Parent = folder
 
-	local innerBeam = Instance.new("Part")
-	innerBeam.Name = "BeamInner"
-	innerBeam.Anchored = true
-	innerBeam.CanCollide = false
-	innerBeam.CanQuery = false
-	innerBeam.CanTouch = false
-	innerBeam.CastShadow = false
-	innerBeam.Material = Enum.Material.Neon
-	innerBeam.Color = white
-	innerBeam.Size = Vector3.new(1.2, 0.1, 1.2)
-	innerBeam.CFrame = CFrame.new(skyPos)
-	innerBeam.Transparency = 0
-	innerBeam.Parent = folder
+	local inner = Instance.new("Part")
+	inner.Name = "BeamInner"
+	inner.Anchored = true
+	inner.CanCollide = false
+	inner.CanQuery = false
+	inner.CanTouch = false
+	inner.CastShadow = false
+	inner.Material = Enum.Material.Neon
+	inner.Color = white
+	inner.Size = Vector3.new(0.8, BEAM_HEIGHT, 0.8)
+	inner.CFrame = CFrame.new(midPos)
+	inner.Transparency = 0
+	inner.Parent = folder
 
 	local light = Instance.new("PointLight")
 	light.Color = white
-	light.Range = 40
+	light.Range = 35
 	light.Brightness = 4
-	light.Parent = beam
-
-	local groundLight = Instance.new("PointLight")
-	groundLight.Color = white
-	groundLight.Range = 25
-	groundLight.Brightness = 3
-	local glPart = Instance.new("Part")
-	glPart.Name = "GroundGlow"
-	glPart.Anchored = true
-	glPart.CanCollide = false
-	glPart.CanQuery = false
-	glPart.Transparency = 1
-	glPart.Size = Vector3.new(1, 1, 1)
-	glPart.CFrame = CFrame.new(position)
-	glPart.Parent = folder
-	groundLight.Parent = glPart
+	light.Parent = inner
 
 	local impactRing = Instance.new("Part")
-	impactRing.Name = "ImpactRing"
 	impactRing.Shape = Enum.PartType.Cylinder
 	impactRing.Anchored = true
 	impactRing.CanCollide = false
@@ -1404,23 +1553,14 @@ function VisualsModule:PlayBeamFX(position, victimChar)
 	impactRing.CastShadow = false
 	impactRing.Material = Enum.Material.Neon
 	impactRing.Color = white
-	impactRing.Size = Vector3.new(0.08, 1, 1)
+	impactRing.Size = Vector3.new(0.06, 2, 2)
 	impactRing.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
-	impactRing.Transparency = 0.3
+	impactRing.Transparency = 0.2
 	impactRing.Parent = folder
 
-	self.TweenService:Create(beam,
-		TweenInfo.new(0.12, Enum.EasingStyle.Expo, Enum.EasingDirection.Out),
-		{Size = Vector3.new(3, 80, 3), CFrame = CFrame.new(position + Vector3.new(0, 40, 0))}
-	):Play()
-	self.TweenService:Create(innerBeam,
-		TweenInfo.new(0.12, Enum.EasingStyle.Expo, Enum.EasingDirection.Out),
-		{Size = Vector3.new(1.2, 80, 1.2), CFrame = CFrame.new(position + Vector3.new(0, 40, 0))}
-	):Play()
-
 	self.TweenService:Create(impactRing,
-		TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{Size = Vector3.new(0.08, 18, 18), Transparency = 1}
+		TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(0.06, 14, 14), Transparency = 1}
 	):Play()
 
 	if victimChar then
@@ -1430,7 +1570,7 @@ function VisualsModule:PlayBeamFX(position, victimChar)
 					part.Material = Enum.Material.Neon
 					part.Color = white
 					self.TweenService:Create(part,
-						TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+						TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 						{Transparency = 1}
 					):Play()
 				end)
@@ -1438,26 +1578,25 @@ function VisualsModule:PlayBeamFX(position, victimChar)
 		end
 	end
 
-	task.delay(0.5, function()
+	task.delay(0.4, function()
 		if beam and beam.Parent then
 			self.TweenService:Create(beam,
-				TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{Size = Vector3.new(0.3, 80, 0.3), Transparency = 1}
+				TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+				{Size = Vector3.new(0.2, BEAM_HEIGHT, 0.2), Transparency = 1}
 			):Play()
-			self.TweenService:Create(innerBeam,
-				TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		end
+		if inner and inner.Parent then
+			self.TweenService:Create(inner,
+				TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 				{Transparency = 1}
 			):Play()
 		end
 		if light then
-			self.TweenService:Create(light, TweenInfo.new(0.8), {Range = 0, Brightness = 0}):Play()
-		end
-		if groundLight then
-			self.TweenService:Create(groundLight, TweenInfo.new(0.8), {Range = 0}):Play()
+			self.TweenService:Create(light, TweenInfo.new(0.7), {Range = 0, Brightness = 0}):Play()
 		end
 	end)
 
-	self.Debris:AddItem(folder, 2.5)
+	self.Debris:AddItem(folder, 2)
 end
 
 function VisualsModule:PlayInfernoFX(position, victimChar)
@@ -1467,7 +1606,6 @@ function VisualsModule:PlayInfernoFX(position, victimChar)
 	folder.Parent = self.Workspace
 
 	local baseP = Instance.new("Part")
-	baseP.Name = "InfernoBase"
 	baseP.Anchored = true
 	baseP.CanCollide = false
 	baseP.CanQuery = false
@@ -1477,50 +1615,49 @@ function VisualsModule:PlayInfernoFX(position, victimChar)
 	baseP.CFrame = CFrame.new(position)
 	baseP.Parent = folder
 
-	local fireEmitter = Instance.new("ParticleEmitter")
-	fireEmitter.Color = ColorSequence.new({
+	local fire = Instance.new("ParticleEmitter")
+	fire.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, white),
-		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(230, 230, 240)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 220, 235)),
 		ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 200)),
 	})
-	fireEmitter.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5),
-		NumberSequenceKeypoint.new(0.3, 2.5),
-		NumberSequenceKeypoint.new(0.7, 1.8),
+	fire.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(0.3, 2.0),
+		NumberSequenceKeypoint.new(0.7, 1.5),
 		NumberSequenceKeypoint.new(1, 0),
 	})
-	fireEmitter.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.2),
+	fire.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
 		NumberSequenceKeypoint.new(0.5, 0.3),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	fireEmitter.Lifetime = NumberRange.new(0.4, 0.9)
-	fireEmitter.Rate = 80
-	fireEmitter.Speed = NumberRange.new(4, 10)
-	fireEmitter.SpreadAngle = Vector2.new(25, 25)
-	fireEmitter.RotSpeed = NumberRange.new(-120, 120)
-	fireEmitter.Rotation = NumberRange.new(-180, 180)
-	fireEmitter.LightEmission = 1
-	fireEmitter.LightInfluence = 0
-	fireEmitter.Texture = "rbxassetid://6490035152"
-	fireEmitter.EmissionDirection = Enum.NormalId.Top
-	fireEmitter.Parent = baseP
+	fire.Lifetime = NumberRange.new(0.3, 0.7)
+	fire.Rate = 60
+	fire.Speed = NumberRange.new(5, 12)
+	fire.SpreadAngle = Vector2.new(20, 20)
+	fire.RotSpeed = NumberRange.new(-100, 100)
+	fire.Rotation = NumberRange.new(-180, 180)
+	fire.LightEmission = 1
+	fire.LightInfluence = 0
+	fire.Texture = "rbxassetid://6490035152"
+	fire.EmissionDirection = Enum.NormalId.Top
+	fire.Parent = baseP
 
 	local embers = Instance.new("ParticleEmitter")
 	embers.Color = ColorSequence.new(white)
 	embers.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0, 0.1),
 		NumberSequenceKeypoint.new(1, 0),
 	})
 	embers.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.7, 0.4),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	embers.Lifetime = NumberRange.new(0.6, 1.5)
-	embers.Rate = 40
-	embers.Speed = NumberRange.new(6, 14)
-	embers.SpreadAngle = Vector2.new(50, 50)
+	embers.Lifetime = NumberRange.new(0.5, 1.2)
+	embers.Rate = 25
+	embers.Speed = NumberRange.new(5, 12)
+	embers.SpreadAngle = Vector2.new(45, 45)
 	embers.LightEmission = 1
 	embers.LightInfluence = 0
 	embers.Texture = "rbxassetid://6490035152"
@@ -1529,7 +1666,7 @@ function VisualsModule:PlayInfernoFX(position, victimChar)
 
 	local light = Instance.new("PointLight")
 	light.Color = white
-	light.Range = 30
+	light.Range = 25
 	light.Brightness = 3
 	light.Parent = baseP
 
@@ -1537,53 +1674,26 @@ function VisualsModule:PlayInfernoFX(position, victimChar)
 		for _, part in pairs(victimChar:GetDescendants()) do
 			if part:IsA("BasePart") then
 				pcall(function()
-					local partFire = Instance.new("ParticleEmitter")
-					partFire.Color = ColorSequence.new(white)
-					partFire.Size = NumberSequence.new({
-						NumberSequenceKeypoint.new(0, 0.2),
-						NumberSequenceKeypoint.new(0.5, 0.6),
-						NumberSequenceKeypoint.new(1, 0),
-					})
-					partFire.Transparency = NumberSequence.new({
-						NumberSequenceKeypoint.new(0, 0.3),
-						NumberSequenceKeypoint.new(1, 1),
-					})
-					partFire.Lifetime = NumberRange.new(0.2, 0.5)
-					partFire.Rate = 30
-					partFire.Speed = NumberRange.new(2, 5)
-					partFire.SpreadAngle = Vector2.new(40, 40)
-					partFire.LightEmission = 1
-					partFire.LightInfluence = 0
-					partFire.Texture = "rbxassetid://6490035152"
-					partFire.EmissionDirection = Enum.NormalId.Top
-					partFire.Parent = part
-
 					part.Material = Enum.Material.Neon
 					part.Color = white
 					self.TweenService:Create(part,
-						TweenInfo.new(1.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-						{Transparency = 1, Size = part.Size * 0.1}
+						TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+						{Transparency = 1}
 					):Play()
-
-					task.delay(1.2, function()
-						if partFire and partFire.Parent then
-							partFire.Rate = 0
-						end
-					end)
 				end)
 			end
 		end
 	end
 
-	task.delay(1.0, function()
-		if fireEmitter then fireEmitter.Rate = 0 end
+	task.delay(0.8, function()
+		if fire then fire.Rate = 0 end
 		if embers then embers.Rate = 0 end
 		if light and light.Parent then
-			self.TweenService:Create(light, TweenInfo.new(1.0), {Range = 0, Brightness = 0}):Play()
+			self.TweenService:Create(light, TweenInfo.new(0.8), {Range = 0, Brightness = 0}):Play()
 		end
 	end)
 
-	self.Debris:AddItem(folder, 3)
+	self.Debris:AddItem(folder, 2.5)
 end
 
 function VisualsModule:FixFxInstance(fx, cf)
@@ -2130,6 +2240,10 @@ function VisualsModule:SetTracerWidth(value)
 	self.TRACER_WIDTH = value
 end
 
+function VisualsModule:SetTracerStyle(value)
+	self.TRACER_STYLE = value
+end
+
 function VisualsModule:SetTracerNeon(value)
 	self.TRACER_NEON = value
 	if value then
@@ -2172,10 +2286,18 @@ function VisualsModule:SetWingsColor(value)
 	self.WINGS_COLOR = value
 	if self._wingData then
 		for _, p in ipairs(self._wingData.allParts) do
-			if p and p.Parent then p.Color = value end
+			if p and p.Parent then
+				if not p:IsA("Part") or p.Transparency < 1 then
+					pcall(function() p.Color = value end)
+				end
+			end
 		end
-		for _, trail in ipairs(self._wingData.tipTrails) do
+		for _, trail in ipairs(self._wingData.allTrails) do
 			trail.Color = ColorSequence.new(value)
+		end
+		if self._wingData.glow then self._wingData.glow.Color = value end
+		if self._wingData.particles then
+			self._wingData.particles.Color = ColorSequence.new(value)
 		end
 	end
 end
@@ -2203,9 +2325,6 @@ function VisualsModule:SetAuraColor(value)
 		end
 		for _, orb in ipairs(self._auraData.mainOrbs) do colorOrb(orb) end
 		for _, orb in ipairs(self._auraData.innerOrbs) do colorOrb(orb) end
-		if self._auraData.groundRing and self._auraData.groundRing.Parent then
-			self._auraData.groundRing.Color = value
-		end
 		if self._auraData.emitter and self._auraData.emitter.Parent then
 			self._auraData.emitter.Color = ColorSequence.new(value)
 		end
@@ -2362,6 +2481,7 @@ function VisualsModule:GetSettings()
 		TRACER_LIFETIME = self.TRACER_LIFETIME,
 		TRACER_WIDTH = self.TRACER_WIDTH,
 		TRACER_NEON = self.TRACER_NEON,
+		TRACER_STYLE = self.TRACER_STYLE,
 
 		CHINA_HAT_ENABLED = self.CHINA_HAT_ENABLED,
 		CHINA_HAT_COLOR = colorToTable(self.CHINA_HAT_COLOR),
@@ -2440,6 +2560,7 @@ function VisualsModule:ApplySettings(settings)
 	if settings.TRACER_LIFETIME ~= nil then self:SetTracerLifetime(settings.TRACER_LIFETIME) end
 	if settings.TRACER_WIDTH ~= nil then self:SetTracerWidth(settings.TRACER_WIDTH) end
 	if settings.TRACER_NEON ~= nil then self:SetTracerNeon(settings.TRACER_NEON) end
+	if settings.TRACER_STYLE then self:SetTracerStyle(settings.TRACER_STYLE) end
 
 	if settings.CHINA_HAT_ENABLED ~= nil then self:SetChinaHatEnabled(settings.CHINA_HAT_ENABLED) end
 	if settings.CHINA_HAT_COLOR then self:SetChinaHatColor(toColor3(settings.CHINA_HAT_COLOR) or self.CHINA_HAT_COLOR) end

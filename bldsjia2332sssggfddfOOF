@@ -305,14 +305,8 @@ function World:StartBhop()
 		if not char then return end
 		local hum = char:FindFirstChildOfClass("Humanoid")
 		if not hum then return end
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		if not hrp then return end
 
 		hum.WalkSpeed = self.BHOP_SPEED
-
-		if hum.FloorMaterial ~= Enum.Material.Air then
-			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-		end
 	end)
 	table.insert(self._connections, self._bhopConn)
 end
@@ -601,24 +595,87 @@ function World:GetNextMessage()
 	return msg
 end
 
-function World:SendChat(msg)
-	if not msg or msg == "" then return end
-	pcall(function()
-		local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-		if chatRemote then
-			local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
-			if sayMsg then
-				sayMsg:FireServer(msg, "All")
-				return
+function World:FindChatRemote()
+	if self._chatRemote then return self._chatRemote end
+
+	local function searchFor(parent, names)
+		for _, name in ipairs(names) do
+			local found = parent:FindFirstChild(name)
+			if found then return found end
+		end
+		for _, child in pairs(parent:GetChildren()) do
+			local n = child.Name:lower()
+			if n:find("chat") or n:find("message") or n:find("msg") then
+				if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+					return child
+				end
+				if child:IsA("Folder") or child:IsA("Configuration") then
+					for _, sub in pairs(child:GetChildren()) do
+						local sn = sub.Name:lower()
+						if (sn:find("send") or sn:find("say") or sn:find("msg") or sn:find("chat"))
+							and (sub:IsA("RemoteEvent") or sub:IsA("RemoteFunction")) then
+							return sub
+						end
+					end
+				end
 			end
 		end
+		return nil
+	end
 
+	local names = {
+		"ChatMessage", "SendMessage", "SendChat", "ChatRemote",
+		"chat", "Chat", "Message", "SendMsg", "SayMessage",
+		"DefaultChatSystemChatEvents",
+	}
+
+	local remote = searchFor(ReplicatedStorage, names)
+	if remote then
+		self._chatRemote = remote
+		return remote
+	end
+
+	return nil
+end
+
+function World:SendChat(msg)
+	if not msg or msg == "" then return end
+
+	pcall(function()
 		local textChannels = game:GetService("TextChatService"):FindFirstChild("TextChannels")
 		if textChannels then
 			local general = textChannels:FindFirstChild("RBXGeneral")
 			if general then
 				general:SendAsync(msg)
 				return
+			end
+			for _, ch in pairs(textChannels:GetChildren()) do
+				if ch:IsA("TextChannel") then
+					ch:SendAsync(msg)
+					return
+				end
+			end
+		end
+	end)
+
+	pcall(function()
+		local legacy = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+		if legacy then
+			local sayMsg = legacy:FindFirstChild("SayMessageRequest")
+			if sayMsg then
+				sayMsg:FireServer(msg, "All")
+				return
+			end
+		end
+	end)
+
+	pcall(function()
+		local remote = self:FindChatRemote()
+		if remote then
+			if remote:IsA("RemoteEvent") then
+				remote:FireServer(msg)
+			elseif remote:IsA("RemoteFunction") then
+				remote:InvokeServer(msg)
 			end
 		end
 	end)

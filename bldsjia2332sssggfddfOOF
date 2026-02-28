@@ -1,0 +1,790 @@
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local TS = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+
+local World = {}
+World.__index = World
+
+function World.new()
+	local self = setmetatable({}, World)
+
+	self.ORIGINAL_LIGHTING = {
+		Brightness = Lighting.Brightness,
+		Ambient = Lighting.Ambient,
+		OutdoorAmbient = Lighting.OutdoorAmbient,
+		ClockTime = Lighting.ClockTime,
+	}
+
+	self.WORLD_TIME_ENABLED = false
+	self.CUSTOM_CLOCKTIME = Lighting.ClockTime
+
+	self.CUSTOM_SKY_ENABLED = false
+	self.CUSTOM_SKY_PRESET = "Original"
+
+	self.SKY_PRESETS = {
+		Original = {
+			SkyboxBk = "rbxassetid://148345460",
+			SkyboxDn = "rbxassetid://148345469",
+			SkyboxFt = "rbxassetid://148345455",
+			SkyboxLf = "rbxassetid://148345446",
+			SkyboxRt = "rbxassetid://148345440",
+			SkyboxUp = "rbxassetid://148345466",
+			SunTextureId = "rbxassetid://1345009717",
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			StarCount = 3000,
+		},
+		Blue = {
+			SkyboxBk = "rbxassetid://124106120273678",
+			SkyboxDn = "rbxassetid://72406028001064",
+			SkyboxFt = "rbxassetid://139238600782726",
+			SkyboxLf = "rbxassetid://139363840022859",
+			SkyboxRt = "rbxassetid://122628916393316",
+			SkyboxUp = "rbxassetid://104354476381566",
+			StarCount = 3000,
+		},
+		Gray = {
+			CelestialBodiesShown = true,
+			MoonAngularSize = 6,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://15063412549",
+			SkyboxDn = "rbxassetid://15063431496",
+			SkyboxFt = "rbxassetid://15063442046",
+			SkyboxLf = "rbxassetid://15063637382",
+			SkyboxRt = "rbxassetid://15063435355",
+			SkyboxUp = "rbxassetid://15063533447",
+			StarCount = 3000,
+			SunAngularSize = 9,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+		Dark = {
+			CelestialBodiesShown = true,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://2013298",
+			SkyboxDn = "rbxassetid://2013298",
+			SkyboxFt = "rbxassetid://2013298",
+			SkyboxLf = "rbxassetid://2013298",
+			SkyboxRt = "rbxassetid://2013298",
+			SkyboxUp = "rbxassetid://2013298",
+			StarCount = 3000,
+			SunAngularSize = 21,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+		Green = {
+			CelestialBodiesShown = false,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://56661187",
+			SkyboxDn = "rbxassetid://566611398",
+			SkyboxFt = "rbxassetid://566611142",
+			SkyboxLf = "rbxassetid://566611266",
+			SkyboxRt = "rbxassetid://566611300",
+			SkyboxUp = "rbxassetid://566611218",
+			StarCount = 3000,
+			SunAngularSize = 21,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+		Pink = {
+			CelestialBodiesShown = false,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://271042516",
+			SkyboxDn = "rbxassetid://271077243",
+			SkyboxFt = "rbxassetid://271042556",
+			SkyboxLf = "rbxassetid://271042310",
+			SkyboxRt = "rbxassetid://271042467",
+			SkyboxUp = "rbxassetid://271077958",
+			StarCount = 0,
+			SunAngularSize = 21,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+		Orange = {
+			CelestialBodiesShown = true,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://150939022",
+			SkyboxDn = "rbxassetid://150939038",
+			SkyboxFt = "rbxassetid://150939047",
+			SkyboxLf = "rbxassetid://150939056",
+			SkyboxRt = "rbxassetid://150939063",
+			SkyboxUp = "rbxassetid://150939082",
+			StarCount = 3000,
+			SunAngularSize = 21,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+		Purple = {
+			CelestialBodiesShown = true,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://75339068650022",
+			SkyboxDn = "rbxassetid://103288557260150",
+			SkyboxFt = "rbxassetid://131140417030026",
+			SkyboxLf = "rbxassetid://91178363674210",
+			SkyboxRt = "rbxassetid://91811655162047",
+			SkyboxUp = "rbxassetid://70646477316976",
+			StarCount = 3000,
+			SunAngularSize = 14,
+			SunTextureId = "rbxassetid://13683514089",
+		},
+		Red = {
+			CelestialBodiesShown = false,
+			MoonAngularSize = 11,
+			MoonTextureId = "rbxasset://sky/moon.jpg",
+			SkyboxBk = "rbxassetid://108929045660200",
+			SkyboxDn = "rbxassetid://78646480540009",
+			SkyboxFt = "rbxassetid://90546017435179",
+			SkyboxLf = "rbxassetid://109838453114563",
+			SkyboxRt = "rbxassetid://94190734796082",
+			SkyboxUp = "rbxassetid://126944775797063",
+			StarCount = 3000,
+			SunAngularSize = 21,
+			SunTextureId = "rbxasset://sky/sun.jpg",
+		},
+	}
+
+	local s = Lighting:FindFirstChildOfClass("Sky")
+	if s then
+		self.ORIGINAL_SKY = s:Clone()
+	end
+
+	self.BLUR_ENABLED = false
+	self.BLUR_SIZE = 10
+	self._blurEffect = nil
+
+	self.BHOP_ENABLED = false
+	self.BHOP_SPEED = 25
+	self._bhopConn = nil
+
+	self.NOCLIP_ENABLED = false
+	self._noclipConn = nil
+
+	self.FLY_ENABLED = false
+	self.FLY_SPEED = 50
+	self._flyConn = nil
+	self._flyBV = nil
+
+	self.SPAWN_TP_ENABLED = false
+	self._spawnTpConn = nil
+
+	self.TRASHTALK_ENABLED = false
+	self.TRASHTALK_MODE = "Kill Talk"
+	self.TRASHTALK_MESSAGES = {"Get better, get Arcanum Nextgen"}
+	self.TRASHTALK_COOLDOWN = 3
+	self._ttMsgIndex = 1
+	self._ttSpamConn = nil
+	self._ttKillConn = nil
+	self._ttRoundConn = nil
+	self._ttDeathConn = nil
+
+	self._unloadCallbacks = {}
+	self._connections = {}
+
+	return self
+end
+
+-- ═══════════════════════════════════════════════════
+--  World Time Changer
+-- ═══════════════════════════════════════════════════
+
+function World:applyTime()
+	if self.WORLD_TIME_ENABLED then
+		Lighting.ClockTime = self.CUSTOM_CLOCKTIME
+	else
+		Lighting.ClockTime = self.ORIGINAL_LIGHTING.ClockTime
+	end
+end
+
+function World:SetTimeEnabled(v)
+	self.WORLD_TIME_ENABLED = v
+	self:applyTime()
+end
+
+function World:SetClockTime(v)
+	self.CUSTOM_CLOCKTIME = v
+	self:applyTime()
+end
+
+-- ═══════════════════════════════════════════════════
+--  Skybox Changer
+-- ═══════════════════════════════════════════════════
+
+function World:wipeSky()
+	for _, v in ipairs(Lighting:GetChildren()) do
+		if v:IsA("Sky") then v:Destroy() end
+	end
+end
+
+function World:buildSky(name)
+	local data = self.SKY_PRESETS[name]
+	if not data then return end
+	local sky = Instance.new("Sky")
+	for k, v in pairs(data) do
+		sky[k] = v
+	end
+	sky.Name = "NemesisSky"
+	sky.Parent = Lighting
+end
+
+function World:applySky()
+	self:wipeSky()
+	if self.CUSTOM_SKY_ENABLED then
+		self:buildSky(self.CUSTOM_SKY_PRESET)
+	else
+		if self.ORIGINAL_SKY then
+			self.ORIGINAL_SKY:Clone().Parent = Lighting
+		end
+	end
+end
+
+function World:SetSkyEnabled(v)
+	self.CUSTOM_SKY_ENABLED = v
+	self:applySky()
+end
+
+function World:SetSkyPreset(v)
+	self.CUSTOM_SKY_PRESET = v
+	self:applySky()
+end
+
+-- ═══════════════════════════════════════════════════
+--  Blur (Post Processing)
+-- ═══════════════════════════════════════════════════
+
+function World:SetBlurEnabled(v)
+	self.BLUR_ENABLED = v
+	if v then
+		if not self._blurEffect then
+			self._blurEffect = Instance.new("BlurEffect")
+			self._blurEffect.Name = "ArcBlur"
+			self._blurEffect.Size = self.BLUR_SIZE
+			self._blurEffect.Parent = Lighting
+		end
+		self._blurEffect.Enabled = true
+	else
+		if self._blurEffect then
+			self._blurEffect.Enabled = false
+		end
+	end
+end
+
+function World:SetBlurSize(v)
+	self.BLUR_SIZE = v
+	if self._blurEffect then
+		self._blurEffect.Size = v
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Bunny Hop
+-- ═══════════════════════════════════════════════════
+
+function World:SetBhopEnabled(v)
+	self.BHOP_ENABLED = v
+	if v then
+		self:StartBhop()
+	else
+		self:StopBhop()
+	end
+end
+
+function World:SetBhopSpeed(v)
+	self.BHOP_SPEED = v
+end
+
+function World:StartBhop()
+	self:StopBhop()
+	self._bhopConn = RS.Heartbeat:Connect(function()
+		if not self.BHOP_ENABLED then return end
+		local char = player.Character
+		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not hrp then return end
+
+		hum.WalkSpeed = self.BHOP_SPEED
+
+		if hum.FloorMaterial ~= Enum.Material.Air then
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
+	end)
+	table.insert(self._connections, self._bhopConn)
+end
+
+function World:StopBhop()
+	if self._bhopConn then
+		self._bhopConn:Disconnect()
+		self._bhopConn = nil
+	end
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then hum.WalkSpeed = 16 end
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Noclip
+-- ═══════════════════════════════════════════════════
+
+function World:SetNoclipEnabled(v)
+	self.NOCLIP_ENABLED = v
+	if v then
+		self:StartNoclip()
+	else
+		self:StopNoclip()
+	end
+end
+
+function World:StartNoclip()
+	self:StopNoclip()
+	self._noclipConn = RS.Stepped:Connect(function()
+		if not self.NOCLIP_ENABLED then return end
+		local char = player.Character
+		if not char then return end
+		for _, part in pairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end)
+	table.insert(self._connections, self._noclipConn)
+end
+
+function World:StopNoclip()
+	if self._noclipConn then
+		self._noclipConn:Disconnect()
+		self._noclipConn = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Fly
+-- ═══════════════════════════════════════════════════
+
+function World:SetFlyEnabled(v)
+	self.FLY_ENABLED = v
+	if v then
+		self:StartFly()
+	else
+		self:StopFly()
+	end
+end
+
+function World:SetFlySpeed(v)
+	self.FLY_SPEED = v
+end
+
+function World:StartFly()
+	self:StopFly()
+	local char = player.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	local bv = Instance.new("BodyVelocity")
+	bv.Name = "ArcFlyBV"
+	bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bv.Velocity = Vector3.new(0, 0, 0)
+	bv.Parent = hrp
+	self._flyBV = bv
+
+	self._flyConn = RS.Heartbeat:Connect(function()
+		if not self.FLY_ENABLED then return end
+		if not hrp or not hrp.Parent then self:StopFly(); return end
+
+		local cam = Workspace.CurrentCamera
+		local dir = Vector3.new(0, 0, 0)
+		local speed = self.FLY_SPEED
+
+		local moveDir = hum.MoveDirection
+		if moveDir.Magnitude > 0 then
+			dir = dir + cam.CFrame:VectorToWorldSpace(
+				cam.CFrame:VectorToObjectSpace(moveDir).Unit
+			) * speed
+		end
+
+		if UIS:IsKeyDown(Enum.KeyCode.Space) then
+			dir = dir + Vector3.new(0, speed, 0)
+		end
+		if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+			dir = dir - Vector3.new(0, speed, 0)
+		end
+
+		bv.Velocity = dir
+
+		for _, part in pairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end)
+	table.insert(self._connections, self._flyConn)
+end
+
+function World:StopFly()
+	if self._flyConn then
+		self._flyConn:Disconnect()
+		self._flyConn = nil
+	end
+	if self._flyBV then
+		self._flyBV:Destroy()
+		self._flyBV = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Enemy Spawn Teleport
+-- ═══════════════════════════════════════════════════
+
+function World:SetSpawnTpEnabled(v)
+	self.SPAWN_TP_ENABLED = v
+	if v then
+		self:StartSpawnTp()
+	else
+		self:StopSpawnTp()
+	end
+end
+
+function World:GetPlayerTeam()
+	local char = player.Character
+	if not char then return nil end
+
+	local teamFolder = Workspace:FindFirstChild("Teams") or Workspace:FindFirstChild("teams")
+	if teamFolder then
+		for _, folder in pairs(teamFolder:GetChildren()) do
+			local name = folder.Name:lower()
+			for _, obj in pairs(folder:GetChildren()) do
+				if obj.Name == player.Name or (obj:IsA("ObjectValue") and obj.Value == player) then
+					if name:find("t") and not name:find("ct") then
+						return "T"
+					elseif name:find("ct") or name:find("counter") then
+						return "CT"
+					end
+				end
+			end
+		end
+	end
+
+	if player.Team then
+		local tn = player.Team.Name:lower()
+		if tn:find("terrorist") and not tn:find("counter") then return "T" end
+		if tn:find("counter") or tn:find("ct") then return "CT" end
+		if tn == "t" then return "T" end
+	end
+
+	local teamVal = char:FindFirstChild("Team") or char:FindFirstChild("team")
+	if teamVal and teamVal:IsA("StringValue") then
+		local tv = teamVal.Value:lower()
+		if tv:find("t") and not tv:find("ct") then return "T" end
+		if tv:find("ct") or tv:find("counter") then return "CT" end
+	end
+
+	return nil
+end
+
+function World:TeleportToSpawn()
+	local char = player.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local team = self:GetPlayerTeam()
+	if not team then return end
+
+	if team == "T" then
+		hrp.CFrame = CFrame.new(-201, 24, -10)
+	elseif team == "CT" then
+		hrp.CFrame = CFrame.new(-303, 19, 55)
+	end
+end
+
+function World:StartSpawnTp()
+	self:StopSpawnTp()
+
+	local roundEvent = ReplicatedStorage:FindFirstChild("GameEvent")
+		or ReplicatedStorage:FindFirstChild("RoundStart")
+		or ReplicatedStorage:FindFirstChild("round")
+
+	if roundEvent and roundEvent:IsA("RemoteEvent") then
+		self._spawnTpConn = roundEvent.OnClientEvent:Connect(function()
+			if not self.SPAWN_TP_ENABLED then return end
+			task.delay(5.1, function()
+				self:TeleportToSpawn()
+			end)
+		end)
+		table.insert(self._connections, self._spawnTpConn)
+	end
+
+	local charConn
+	charConn = player.CharacterAdded:Connect(function(char)
+		if not self.SPAWN_TP_ENABLED then return end
+		char:WaitForChild("HumanoidRootPart", 10)
+		task.delay(5.1, function()
+			if self.SPAWN_TP_ENABLED then
+				self:TeleportToSpawn()
+			end
+		end)
+	end)
+	self._spawnTpCharConn = charConn
+	table.insert(self._connections, charConn)
+end
+
+function World:StopSpawnTp()
+	if self._spawnTpConn then
+		self._spawnTpConn:Disconnect()
+		self._spawnTpConn = nil
+	end
+	if self._spawnTpCharConn then
+		self._spawnTpCharConn:Disconnect()
+		self._spawnTpCharConn = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Trash Talk
+-- ═══════════════════════════════════════════════════
+
+function World:SetTrashtalkEnabled(v)
+	self.TRASHTALK_ENABLED = v
+	if v then
+		self:StartTrashtalk()
+	else
+		self:StopTrashtalk()
+	end
+end
+
+function World:SetTrashtalkMode(v)
+	self.TRASHTALK_MODE = v
+	if self.TRASHTALK_ENABLED then
+		self:StopTrashtalk()
+		self:StartTrashtalk()
+	end
+end
+
+function World:SetTrashtalkCooldown(v)
+	self.TRASHTALK_COOLDOWN = v
+end
+
+function World:AddTrashtalkMessage(msg)
+	if msg and msg ~= "" then
+		table.insert(self.TRASHTALK_MESSAGES, msg)
+	end
+end
+
+function World:RemoveTrashtalkMessage(index)
+	if index > 0 and index <= #self.TRASHTALK_MESSAGES then
+		table.remove(self.TRASHTALK_MESSAGES, index)
+	end
+end
+
+function World:ClearTrashtalkMessages()
+	self.TRASHTALK_MESSAGES = {}
+	self._ttMsgIndex = 1
+end
+
+function World:GetNextMessage()
+	if #self.TRASHTALK_MESSAGES == 0 then return nil end
+	local msg = self.TRASHTALK_MESSAGES[self._ttMsgIndex]
+	self._ttMsgIndex = self._ttMsgIndex + 1
+	if self._ttMsgIndex > #self.TRASHTALK_MESSAGES then
+		self._ttMsgIndex = 1
+	end
+	return msg
+end
+
+function World:SendChat(msg)
+	if not msg or msg == "" then return end
+	pcall(function()
+		local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+		if chatRemote then
+			local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
+			if sayMsg then
+				sayMsg:FireServer(msg, "All")
+				return
+			end
+		end
+
+		local textChannels = game:GetService("TextChatService"):FindFirstChild("TextChannels")
+		if textChannels then
+			local general = textChannels:FindFirstChild("RBXGeneral")
+			if general then
+				general:SendAsync(msg)
+				return
+			end
+		end
+	end)
+end
+
+function World:StartTrashtalk()
+	self:StopTrashtalk()
+	local mode = self.TRASHTALK_MODE
+
+	if mode == "Spam" then
+		self._ttSpamConn = task.spawn(function()
+			while self.TRASHTALK_ENABLED and self.TRASHTALK_MODE == "Spam" do
+				local msg = self:GetNextMessage()
+				if msg then self:SendChat(msg) end
+				task.wait(self.TRASHTALK_COOLDOWN)
+			end
+		end)
+
+	elseif mode == "Kill Talk" then
+		local infEvent = ReplicatedStorage:FindFirstChild("inf", 5)
+		if infEvent then
+			self._ttKillConn = infEvent.OnClientEvent:Connect(function()
+				if not self.TRASHTALK_ENABLED then return end
+				local msg = self:GetNextMessage()
+				if msg then
+					task.delay(0.3, function() self:SendChat(msg) end)
+				end
+			end)
+			table.insert(self._connections, self._ttKillConn)
+		end
+
+	elseif mode == "Death Talk" then
+		local function hookChar(char)
+			local hum = char:WaitForChild("Humanoid", 10)
+			if not hum then return end
+			self._ttDeathConn = hum.Died:Connect(function()
+				if not self.TRASHTALK_ENABLED then return end
+				local msg = self:GetNextMessage()
+				if msg then
+					task.delay(0.5, function() self:SendChat(msg) end)
+				end
+			end)
+			table.insert(self._connections, self._ttDeathConn)
+		end
+		if player.Character then hookChar(player.Character) end
+		self._ttDeathCharConn = player.CharacterAdded:Connect(function(c) hookChar(c) end)
+		table.insert(self._connections, self._ttDeathCharConn)
+
+	elseif mode == "Round Start" then
+		self._ttRoundCharConn = player.CharacterAdded:Connect(function()
+			if not self.TRASHTALK_ENABLED then return end
+			task.delay(5.5, function()
+				if self.TRASHTALK_ENABLED then
+					local msg = self:GetNextMessage()
+					if msg then self:SendChat(msg) end
+				end
+			end)
+		end)
+		table.insert(self._connections, self._ttRoundCharConn)
+
+	elseif mode == "Random" then
+		self._ttSpamConn = task.spawn(function()
+			while self.TRASHTALK_ENABLED and self.TRASHTALK_MODE == "Random" do
+				if #self.TRASHTALK_MESSAGES > 0 then
+					local msg = self.TRASHTALK_MESSAGES[math.random(1, #self.TRASHTALK_MESSAGES)]
+					if msg then self:SendChat(msg) end
+				end
+				task.wait(self.TRASHTALK_COOLDOWN + math.random() * 3)
+			end
+		end)
+	end
+end
+
+function World:StopTrashtalk()
+	if self._ttKillConn then pcall(function() self._ttKillConn:Disconnect() end); self._ttKillConn = nil end
+	if self._ttDeathConn then pcall(function() self._ttDeathConn:Disconnect() end); self._ttDeathConn = nil end
+	if self._ttDeathCharConn then pcall(function() self._ttDeathCharConn:Disconnect() end); self._ttDeathCharConn = nil end
+	if self._ttRoundConn then pcall(function() self._ttRoundConn:Disconnect() end); self._ttRoundConn = nil end
+	if self._ttRoundCharConn then pcall(function() self._ttRoundCharConn:Disconnect() end); self._ttRoundCharConn = nil end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Unload
+-- ═══════════════════════════════════════════════════
+
+function World:RegisterUnloadCallback(fn)
+	table.insert(self._unloadCallbacks, fn)
+end
+
+function World:Unload()
+	self:StopBhop()
+	self:StopNoclip()
+	self:StopFly()
+	self:StopSpawnTp()
+	self:StopTrashtalk()
+
+	if self.BLUR_ENABLED and self._blurEffect then
+		self._blurEffect:Destroy()
+		self._blurEffect = nil
+	end
+
+	if self.WORLD_TIME_ENABLED then
+		Lighting.ClockTime = self.ORIGINAL_LIGHTING.ClockTime
+	end
+	if self.CUSTOM_SKY_ENABLED then
+		self:wipeSky()
+		if self.ORIGINAL_SKY then
+			self.ORIGINAL_SKY:Clone().Parent = Lighting
+		end
+	end
+
+	for _, conn in ipairs(self._connections) do
+		pcall(function() conn:Disconnect() end)
+	end
+	self._connections = {}
+
+	for _, fn in ipairs(self._unloadCallbacks) do
+		pcall(fn)
+	end
+end
+
+-- ═══════════════════════════════════════════════════
+--  Export / Import
+-- ═══════════════════════════════════════════════════
+
+function World:Export()
+	return {
+		WORLD_TIME_ENABLED = self.WORLD_TIME_ENABLED,
+		CUSTOM_CLOCKTIME = self.CUSTOM_CLOCKTIME,
+		CUSTOM_SKY_ENABLED = self.CUSTOM_SKY_ENABLED,
+		CUSTOM_SKY_PRESET = self.CUSTOM_SKY_PRESET,
+		BLUR_ENABLED = self.BLUR_ENABLED,
+		BLUR_SIZE = self.BLUR_SIZE,
+		BHOP_ENABLED = self.BHOP_ENABLED,
+		BHOP_SPEED = self.BHOP_SPEED,
+		NOCLIP_ENABLED = self.NOCLIP_ENABLED,
+		FLY_ENABLED = self.FLY_ENABLED,
+		FLY_SPEED = self.FLY_SPEED,
+		SPAWN_TP_ENABLED = self.SPAWN_TP_ENABLED,
+		TRASHTALK_ENABLED = self.TRASHTALK_ENABLED,
+		TRASHTALK_MODE = self.TRASHTALK_MODE,
+		TRASHTALK_MESSAGES = self.TRASHTALK_MESSAGES,
+		TRASHTALK_COOLDOWN = self.TRASHTALK_COOLDOWN,
+	}
+end
+
+function World:Import(t)
+	if t.WORLD_TIME_ENABLED ~= nil then self.WORLD_TIME_ENABLED = t.WORLD_TIME_ENABLED end
+	if t.CUSTOM_CLOCKTIME then self.CUSTOM_CLOCKTIME = t.CUSTOM_CLOCKTIME end
+	if t.CUSTOM_SKY_ENABLED ~= nil then self.CUSTOM_SKY_ENABLED = t.CUSTOM_SKY_ENABLED end
+	if t.CUSTOM_SKY_PRESET then self.CUSTOM_SKY_PRESET = t.CUSTOM_SKY_PRESET end
+	if t.BLUR_ENABLED ~= nil then self:SetBlurEnabled(t.BLUR_ENABLED) end
+	if t.BLUR_SIZE then self:SetBlurSize(t.BLUR_SIZE) end
+	if t.BHOP_ENABLED ~= nil then self:SetBhopEnabled(t.BHOP_ENABLED) end
+	if t.BHOP_SPEED then self:SetBhopSpeed(t.BHOP_SPEED) end
+	if t.NOCLIP_ENABLED ~= nil then self:SetNoclipEnabled(t.NOCLIP_ENABLED) end
+	if t.FLY_ENABLED ~= nil then self:SetFlyEnabled(t.FLY_ENABLED) end
+	if t.FLY_SPEED then self:SetFlySpeed(t.FLY_SPEED) end
+	if t.SPAWN_TP_ENABLED ~= nil then self:SetSpawnTpEnabled(t.SPAWN_TP_ENABLED) end
+	if t.TRASHTALK_MODE then self.TRASHTALK_MODE = t.TRASHTALK_MODE end
+	if t.TRASHTALK_MESSAGES then self.TRASHTALK_MESSAGES = t.TRASHTALK_MESSAGES end
+	if t.TRASHTALK_COOLDOWN then self.TRASHTALK_COOLDOWN = t.TRASHTALK_COOLDOWN end
+	if t.TRASHTALK_ENABLED ~= nil then self:SetTrashtalkEnabled(t.TRASHTALK_ENABLED) end
+
+	self:applyTime()
+	self:applySky()
+end
+
+return World

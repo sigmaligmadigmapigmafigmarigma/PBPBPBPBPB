@@ -345,9 +345,10 @@ end
 
 function VisualsModule:CreateOffscreenArrows()
 	local OffscreenGui = Instance.new("ScreenGui")
-	OffscreenGui.Name = "NemesisOffscreen"
+	OffscreenGui.Name = "ArcOffscreen"
 	OffscreenGui.IgnoreGuiInset = true
 	OffscreenGui.ResetOnSpawn = false
+	OffscreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	OffscreenGui.Parent = self.guiParent
 
 	self.OffscreenGui = OffscreenGui
@@ -360,22 +361,92 @@ function VisualsModule:CreateOffscreenArrows()
 	end
 
 	local function createArrow(plr)
-		local img = Instance.new("ImageLabel")
-		img.Name = plr.Name .. "_Arrow"
-		img.Size = UDim2.fromOffset(45, 45)
-img:SetAttribute("BaseSize", 45)
-		img.AnchorPoint = Vector2.new(0.5, 0.5)
-		img.BackgroundTransparency = 1
-		img.Image = "rbxassetid://121771059734689"
-		img.Visible = false
-		img.ImageTransparency = 0.3
-		img.Parent = OffscreenGui
-		self.arrows[plr] = img
+		local container = Instance.new("Frame")
+		container.Name = plr.Name .. "_Arrow"
+		container.Size = UDim2.fromOffset(30, 30)
+		container.AnchorPoint = Vector2.new(0.5, 0.5)
+		container.BackgroundTransparency = 1
+		container.Visible = false
+		container.Parent = OffscreenGui
+
+		local tri = Instance.new("Frame")
+		tri.Name = "Tri"
+		tri.Size = UDim2.fromOffset(14, 20)
+		tri.AnchorPoint = Vector2.new(0.5, 0.5)
+		tri.Position = UDim2.fromScale(0.5, 0.35)
+		tri.BackgroundColor3 = self.OFFSCREEN_COLOR
+		tri.BackgroundTransparency = 0.05
+		tri.Rotation = 0
+		tri.Parent = container
+		local triCorner = Instance.new("UICorner")
+		triCorner.CornerRadius = UDim.new(0, 2)
+		triCorner.Parent = tri
+
+		local triStroke = Instance.new("UIStroke")
+		triStroke.Color = Color3.fromRGB(0, 0, 0)
+		triStroke.Thickness = 1.5
+		triStroke.Transparency = 0.3
+		triStroke.Parent = tri
+
+		local tipL = Instance.new("Frame")
+		tipL.Name = "TipL"
+		tipL.Size = UDim2.fromOffset(10, 14)
+		tipL.AnchorPoint = Vector2.new(1, 0)
+		tipL.Position = UDim2.new(0.5, -1, 0, -4)
+		tipL.BackgroundColor3 = self.OFFSCREEN_COLOR
+		tipL.BackgroundTransparency = 0.05
+		tipL.Rotation = -25
+		tipL.Parent = container
+		Instance.new("UICorner", tipL).CornerRadius = UDim.new(0, 2)
+		local tipLS = Instance.new("UIStroke")
+		tipLS.Color = Color3.fromRGB(0, 0, 0)
+		tipLS.Thickness = 1.5
+		tipLS.Transparency = 0.3
+		tipLS.Parent = tipL
+
+		local tipR = Instance.new("Frame")
+		tipR.Name = "TipR"
+		tipR.Size = UDim2.fromOffset(10, 14)
+		tipR.AnchorPoint = Vector2.new(0, 0)
+		tipR.Position = UDim2.new(0.5, 1, 0, -4)
+		tipR.BackgroundColor3 = self.OFFSCREEN_COLOR
+		tipR.BackgroundTransparency = 0.05
+		tipR.Rotation = 25
+		tipR.Parent = container
+		Instance.new("UICorner", tipR).CornerRadius = UDim.new(0, 2)
+		local tipRS = Instance.new("UIStroke")
+		tipRS.Color = Color3.fromRGB(0, 0, 0)
+		tipRS.Thickness = 1.5
+		tipRS.Transparency = 0.3
+		tipRS.Parent = tipR
+
+		local distLabel = Instance.new("TextLabel")
+		distLabel.Name = "Dist"
+		distLabel.Size = UDim2.fromOffset(40, 12)
+		distLabel.AnchorPoint = Vector2.new(0.5, 0)
+		distLabel.Position = UDim2.new(0.5, 0, 1, 2)
+		distLabel.BackgroundTransparency = 1
+		distLabel.TextColor3 = self.OFFSCREEN_COLOR
+		distLabel.Font = Enum.Font.GothamBold
+		distLabel.TextSize = 9
+		distLabel.Text = ""
+		distLabel.TextStrokeTransparency = 0.4
+		distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		distLabel.Parent = container
+
+		self.arrows[plr] = {
+			container = container,
+			tri = tri,
+			tipL = tipL,
+			tipR = tipR,
+			triStroke = triStroke,
+			distLabel = distLabel,
+		}
 	end
 
 	local function removeArrow(plr)
 		if self.arrows[plr] then
-			self.arrows[plr]:Destroy()
+			self.arrows[plr].container:Destroy()
 			self.arrows[plr] = nil
 		end
 	end
@@ -394,13 +465,12 @@ img:SetAttribute("BaseSize", 45)
 	end
 
 	local function refreshArrows()
-		for plr, arrow in pairs(self.arrows) do
+		for plr, data in pairs(self.arrows) do
 			if not isEnemy(plr) then
-				arrow:Destroy()
+				data.container:Destroy()
 				self.arrows[plr] = nil
 			end
 		end
-
 		for _, plr in ipairs(self.Players:GetPlayers()) do
 			if plr ~= self.player and isEnemy(plr) and not self.arrows[plr] then
 				createArrow(plr)
@@ -411,14 +481,14 @@ img:SetAttribute("BaseSize", 45)
 	self.player:GetPropertyChangedSignal("Team"):Connect(refreshArrows)
 
 	self.RunService.RenderStepped:Connect(function()
-local t = tick()
+		local t = tick()
 		self.Camera = self.Workspace.CurrentCamera or self.Camera
 		local Camera = self.Camera
 		if not Camera then return end
 
 		if not self.OFFSCREEN_ENABLED then
-			for _, a in pairs(self.arrows) do
-				a.Visible = false
+			for _, data in pairs(self.arrows) do
+				data.container.Visible = false
 			end
 			return
 		end
@@ -427,10 +497,11 @@ local t = tick()
 		local camPos = camCF.Position
 		local vp = Camera.ViewportSize
 		local center = Vector2.new(vp.X / 2, vp.Y / 2)
+		local color = self.OFFSCREEN_COLOR
 
-		for plr, arrow in pairs(self.arrows) do
+		for plr, data in pairs(self.arrows) do
 			if not isEnemy(plr) then
-				arrow.Visible = false
+				data.container.Visible = false
 				continue
 			end
 
@@ -439,7 +510,7 @@ local t = tick()
 			local hum = char and char:FindFirstChild("Humanoid")
 
 			if not hrp or not hum or hum.Health <= 0 then
-				arrow.Visible = false
+				data.container.Visible = false
 				continue
 			end
 
@@ -447,7 +518,7 @@ local t = tick()
 
 			if onScreen and screenPos.Z > 0 then
 				if screenPos.X > 0 and screenPos.X < vp.X and screenPos.Y > 0 and screenPos.Y < vp.Y then
-					arrow.Visible = false
+					data.container.Visible = false
 					continue
 				end
 			end
@@ -460,16 +531,26 @@ local t = tick()
 			local angle = math.atan2(x, z)
 			local rot = math.deg(angle)
 
-			local maxRadius = math.min(420, math.min(vp.X, vp.Y) * 0.35)
+			local dist = (hrp.Position - camPos).Magnitude
+			local maxRadius = math.min(380, math.min(vp.X, vp.Y) * 0.38)
 			local pos = center + Vector2.new(math.sin(angle), -math.cos(angle)) * maxRadius
 
-			arrow.Position = UDim2.fromOffset(pos.X, pos.Y)
-			arrow.Rotation = rot + 180
-			arrow.ImageColor3 = self.OFFSCREEN_COLOR
-			arrow.Visible = true
+			data.container.Position = UDim2.fromOffset(pos.X, pos.Y)
+			data.container.Rotation = rot + 180
 
-local pulse = math.abs(math.sin(t * 4.5))
-arrow.ImageTransparency = 0.1 + pulse * 0.65
+			local pulse = 0.85 + math.sin(t * 3.5) * 0.15
+			data.tri.BackgroundColor3 = color
+			data.tri.BackgroundTransparency = 1 - pulse
+			data.tipL.BackgroundColor3 = color
+			data.tipL.BackgroundTransparency = 1 - pulse
+			data.tipR.BackgroundColor3 = color
+			data.tipR.BackgroundTransparency = 1 - pulse
+
+			data.distLabel.Rotation = -(rot + 180)
+			data.distLabel.TextColor3 = color
+			data.distLabel.Text = math.floor(dist) .. "m"
+
+			data.container.Visible = true
 		end
 	end)
 end

@@ -773,6 +773,190 @@ function VisualsModule:CreateLightningTracer(startPos, endPos)
 	self.Debris:AddItem(folder, lifetime + 0.2)
 end
 
+function VisualsModule:CreateCometTracer(startPos, endPos)
+	local distance = (endPos - startPos).Magnitude
+	if distance < 0.5 then return end
+
+	local folder = Instance.new("Folder")
+	folder.Name = "comet_tracer"
+	folder.Parent = self.Workspace
+
+	local color = self.TRACER_COLOR
+	local dir = (endPos - startPos).Unit
+
+	local head = Instance.new("Part")
+	head.Shape = Enum.PartType.Ball
+	head.Anchored = true; head.CanCollide = false
+	head.CanQuery = false; head.CanTouch = false; head.CastShadow = false
+	head.Material = Enum.Material.Neon
+	head.Color = color
+	head.Size = Vector3.new(0.5, 0.5, 0.5)
+	head.CFrame = CFrame.new(startPos)
+	head.Transparency = 0
+	head.Parent = folder
+
+	local headLight = Instance.new("PointLight")
+	headLight.Color = color; headLight.Range = 12; headLight.Brightness = 3
+	headLight.Parent = head
+
+	local a0 = Instance.new("Attachment"); a0.Name = "A0"; a0.Parent = head
+	local a1 = Instance.new("Attachment"); a1.Name = "A1"
+	a1.Position = Vector3.new(0, 0, 0.4); a1.Parent = head
+
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0; trail.Attachment1 = a1
+	trail.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, color),
+		ColorSequenceKeypoint.new(1, Color3.new(
+			math.min(color.R * 0.3 + 0.7, 1),
+			math.min(color.G * 0.3 + 0.7, 1),
+			math.min(color.B * 0.3 + 0.7, 1)
+		)),
+	})
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.5, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.Lifetime = 0.6
+	trail.FaceCamera = true
+	trail.LightEmission = 1
+	trail.WidthScale = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(0.3, 0.2),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	trail.Enabled = true
+	trail.Parent = head
+
+	local pe = Instance.new("ParticleEmitter")
+	pe.Color = ColorSequence.new(color)
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pe.Lifetime = NumberRange.new(0.2, 0.5)
+	pe.Speed = NumberRange.new(1, 4)
+	pe.SpreadAngle = Vector2.new(120, 120)
+	pe.Rate = 60
+	pe.LightEmission = 1; pe.LightInfluence = 0
+	pe.Drag = 5
+	pe.Texture = "rbxassetid://6490035152"
+	pe.Parent = head
+
+	local flyTime = math.clamp(distance / 1800, 0.06, 0.3)
+	local tween = self.TweenService:Create(head,
+		TweenInfo.new(flyTime, Enum.EasingStyle.Linear),
+		{CFrame = CFrame.new(endPos)}
+	)
+	tween:Play()
+
+	tween.Completed:Once(function()
+		pe.Rate = 0
+		pe:Emit(15)
+		self.TweenService:Create(head,
+			TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{Transparency = 1, Size = Vector3.new(0.05, 0.05, 0.05)}
+		):Play()
+	end)
+
+	self.Debris:AddItem(folder, self.TRACER_LIFETIME + 1)
+end
+
+function VisualsModule:CreateRazorTracer(startPos, endPos)
+	local distance = (endPos - startPos).Magnitude
+	if distance < 0.5 then return end
+
+	local folder = Instance.new("Folder")
+	folder.Name = "razor_tracer"
+	folder.Parent = self.Workspace
+
+	local color = self.TRACER_COLOR
+	local dir = (endPos - startPos).Unit
+
+	local core = Instance.new("Part")
+	core.Anchored = true; core.CanCollide = false
+	core.CanQuery = false; core.CanTouch = false; core.CastShadow = false
+	core.Material = Enum.Material.Neon
+	core.Color = color
+	core.Size = Vector3.new(0.06, 0.06, distance)
+	core.CFrame = CFrame.lookAt((startPos + endPos) / 2, endPos)
+	core.Transparency = 0
+	core.Parent = folder
+
+	local right = dir:Cross(Vector3.new(0, 1, 0))
+	if right.Magnitude < 0.01 then right = dir:Cross(Vector3.new(1, 0, 0)) end
+	right = right.Unit
+	local up = dir:Cross(right).Unit
+
+	local echoCount = 4
+	for i = 1, echoCount do
+		local offset = right * (math.random() - 0.5) * 0.6 + up * (math.random() - 0.5) * 0.6
+		local echoStart = startPos + offset
+		local echoEnd = endPos + offset
+
+		local echo = Instance.new("Part")
+		echo.Anchored = true; echo.CanCollide = false
+		echo.CanQuery = false; echo.CanTouch = false; echo.CastShadow = false
+		echo.Material = Enum.Material.Neon
+		echo.Color = color
+		echo.Size = Vector3.new(0.03, 0.03, distance)
+		echo.CFrame = CFrame.lookAt((echoStart + echoEnd) / 2, echoEnd)
+		echo.Transparency = 0.4 + i * 0.1
+		echo.Parent = folder
+
+		task.delay(i * 0.03, function()
+			if echo and echo.Parent then
+				self.TweenService:Create(echo,
+					TweenInfo.new(0.3 + i * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{Transparency = 1, Size = Vector3.new(0.01, 0.01, distance * 0.5)}
+				):Play()
+			end
+		end)
+	end
+
+	local bladeCount = math.clamp(math.floor(distance / 6), 2, 8)
+	for i = 1, bladeCount do
+		local t = i / (bladeCount + 1)
+		local pos = startPos + dir * distance * t
+
+		local blade = Instance.new("Part")
+		blade.Anchored = true; blade.CanCollide = false
+		blade.CanQuery = false; blade.CanTouch = false; blade.CastShadow = false
+		blade.Material = Enum.Material.Neon
+		blade.Color = color
+		blade.Size = Vector3.new(1.2, 0.04, 0.04)
+		blade.CFrame = CFrame.lookAt(pos, pos + dir) * CFrame.Angles(0, 0, math.rad(45 * i))
+		blade.Transparency = 0.2
+		blade.Parent = folder
+
+		task.delay(0.15, function()
+			if blade and blade.Parent then
+				self.TweenService:Create(blade,
+					TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{Transparency = 1, Size = Vector3.new(2, 0.02, 0.02)}
+				):Play()
+			end
+		end)
+	end
+
+	local lifetime = self.TRACER_LIFETIME
+	task.delay(lifetime * 0.3, function()
+		if core and core.Parent then
+			self.TweenService:Create(core,
+				TweenInfo.new(lifetime * 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+				{Transparency = 1}
+			):Play()
+		end
+	end)
+
+	self.Debris:AddItem(folder, lifetime + 0.3)
+end
+
 function VisualsModule:CreateTracer(startPos, endPos)
 	if not self.TRACER_ENABLED then return end
 
@@ -784,6 +968,12 @@ function VisualsModule:CreateTracer(startPos, endPos)
 		return
 	elseif self.TRACER_STYLE == "Pulse" then
 		self:CreatePulseTracer(startPos, endPos)
+		return
+	elseif self.TRACER_STYLE == "Comet" then
+		self:CreateCometTracer(startPos, endPos)
+		return
+	elseif self.TRACER_STYLE == "Razor" then
+		self:CreateRazorTracer(startPos, endPos)
 		return
 	end
 
@@ -2239,6 +2429,342 @@ function VisualsModule:PlayNovaFX(position, victimChar)
 	self.Debris:AddItem(folder, 2.5)
 end
 
+function VisualsModule:PlayCascadeFX(position, victimChar)
+	local col = self.KILLFX_COLOR
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcCascadeFX"
+	folder.Parent = self.Workspace
+
+	local pillarCount = 8
+	local baseRadius = 4
+
+	for i = 1, pillarCount do
+		local angle = (i / pillarCount) * math.pi * 2
+		local offset = Vector3.new(math.cos(angle) * baseRadius, 0, math.sin(angle) * baseRadius)
+		local pillarPos = position + offset
+
+		local pillar = Instance.new("Part")
+		pillar.Anchored = true; pillar.CanCollide = false
+		pillar.CanQuery = false; pillar.CanTouch = false; pillar.CastShadow = false
+		pillar.Material = Enum.Material.Neon
+		pillar.Color = col
+		pillar.Size = Vector3.new(0.3, 0.1, 0.3)
+		pillar.CFrame = CFrame.new(pillarPos.X, pillarPos.Y - 2, pillarPos.Z)
+		pillar.Transparency = 0.2
+		pillar.Shape = Enum.PartType.Block
+		pillar.Parent = folder
+
+		local delayTime = i * 0.06
+		task.delay(delayTime, function()
+			if not pillar or not pillar.Parent then return end
+			self.TweenService:Create(pillar,
+				TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+				{Size = Vector3.new(0.3, 14 + math.random() * 6, 0.3), CFrame = CFrame.new(pillarPos.X, pillarPos.Y + 5, pillarPos.Z)}
+			):Play()
+
+			task.delay(0.6, function()
+				if not pillar or not pillar.Parent then return end
+				self.TweenService:Create(pillar,
+					TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{Transparency = 1, Size = Vector3.new(0.05, 20, 0.05)}
+				):Play()
+			end)
+		end)
+
+		local glow = Instance.new("PointLight")
+		glow.Color = col; glow.Range = 8; glow.Brightness = 3
+		glow.Parent = pillar
+	end
+
+	local flash = Instance.new("Part")
+	flash.Shape = Enum.PartType.Cylinder
+	flash.Anchored = true; flash.CanCollide = false
+	flash.CanQuery = false; flash.CastShadow = false
+	flash.Material = Enum.Material.Neon
+	flash.Color = col
+	flash.Size = Vector3.new(0.08, 0.5, 0.5)
+	flash.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	flash.Transparency = 0
+	flash.Parent = folder
+
+	self.TweenService:Create(flash,
+		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(0.08, 20, 20), Transparency = 1}
+	):Play()
+
+	self.Debris:AddItem(folder, 2.5)
+end
+
+function VisualsModule:PlayPlasmaFX(position, victimChar)
+	local col = self.KILLFX_COLOR
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcPlasmaFX"
+	folder.Parent = self.Workspace
+
+	local core = Instance.new("Part")
+	core.Shape = Enum.PartType.Ball
+	core.Anchored = true; core.CanCollide = false
+	core.CanQuery = false; core.CanTouch = false; core.CastShadow = false
+	core.Material = Enum.Material.Neon
+	core.Color = col
+	core.Size = Vector3.new(1, 1, 1)
+	core.CFrame = CFrame.new(position)
+	core.Transparency = 0
+	core.Parent = folder
+
+	local coreLight = Instance.new("PointLight")
+	coreLight.Color = col; coreLight.Range = 35; coreLight.Brightness = 6
+	coreLight.Parent = core
+
+	self.TweenService:Create(core,
+		TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{Size = Vector3.new(5, 5, 5)}
+	):Play()
+
+	task.delay(0.3, function()
+		if not core or not core.Parent then return end
+		self.TweenService:Create(core,
+			TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{Size = Vector3.new(0.5, 0.5, 0.5), Transparency = 1}
+		):Play()
+	end)
+
+	local boltCount = 6
+	for i = 1, boltCount do
+		task.delay(0.05 * i, function()
+			local angle1 = math.random() * math.pi * 2
+			local angle2 = math.random() * math.pi - math.pi / 2
+			local endDir = Vector3.new(
+				math.cos(angle1) * math.cos(angle2),
+				math.sin(angle2),
+				math.sin(angle1) * math.cos(angle2)
+			)
+			local boltLen = 8 + math.random() * 6
+
+			local segs = 5
+			local prevPt = position
+			for s = 1, segs do
+				local t = s / segs
+				local idealPt = position + endDir * boltLen * t
+				local jitter = Vector3.new(
+					(math.random() - 0.5) * 2,
+					(math.random() - 0.5) * 2,
+					(math.random() - 0.5) * 2
+				)
+				local pt = (s == segs) and (position + endDir * boltLen) or (idealPt + jitter)
+
+				local seg = Instance.new("Part")
+				seg.Anchored = true; seg.CanCollide = false
+				seg.CanQuery = false; seg.CanTouch = false; seg.CastShadow = false
+				seg.Material = Enum.Material.Neon
+				seg.Color = col
+				local segLen = (pt - prevPt).Magnitude
+				seg.Size = Vector3.new(0.12, 0.12, segLen)
+				seg.CFrame = CFrame.lookAt((prevPt + pt) / 2, pt)
+				seg.Transparency = 0.1
+				seg.Parent = folder
+
+				self.TweenService:Create(seg,
+					TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+					{Transparency = 1, Size = Vector3.new(0.02, 0.02, segLen)}
+				):Play()
+
+				prevPt = pt
+			end
+
+			local tip = Instance.new("Part")
+			tip.Shape = Enum.PartType.Ball
+			tip.Anchored = true; tip.CanCollide = false
+			tip.CanQuery = false; tip.CanTouch = false; tip.CastShadow = false
+			tip.Material = Enum.Material.Neon
+			tip.Color = col
+			tip.Size = Vector3.new(0.8, 0.8, 0.8)
+			tip.CFrame = CFrame.new(position + endDir * boltLen)
+			tip.Transparency = 0
+			tip.Parent = folder
+
+			self.TweenService:Create(tip,
+				TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+				{Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)}
+			):Play()
+		end)
+	end
+
+	self.Debris:AddItem(folder, 2.5)
+end
+
+function VisualsModule:PlayReaperFX(position, victimChar)
+	local col = self.KILLFX_COLOR
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcReaperFX"
+	folder.Parent = self.Workspace
+
+	local slashCount = 3
+	for i = 1, slashCount do
+		local slash = Instance.new("Part")
+		slash.Anchored = true; slash.CanCollide = false
+		slash.CanQuery = false; slash.CanTouch = false; slash.CastShadow = false
+		slash.Material = Enum.Material.Neon
+		slash.Color = col
+		slash.Size = Vector3.new(8, 0.08, 0.5)
+		local rotAngle = (i - 1) * 60
+		slash.CFrame = CFrame.new(position) * CFrame.Angles(
+			math.rad(rotAngle + math.random(-15, 15)),
+			math.rad(math.random(-30, 30)),
+			math.rad(math.random(-20, 20))
+		)
+		slash.Transparency = 0.8
+		slash.Parent = folder
+
+		local targetSize = Vector3.new(12, 0.06, 0.15)
+		self.TweenService:Create(slash,
+			TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{Transparency = 0, Size = targetSize}
+		):Play()
+
+		task.delay(0.15, function()
+			if not slash or not slash.Parent then return end
+			self.TweenService:Create(slash,
+				TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+				{Transparency = 1, Size = Vector3.new(14, 0.02, 0.02)}
+			):Play()
+		end)
+	end
+
+	local base = Instance.new("Part")
+	base.Anchored = true; base.CanCollide = false; base.CanQuery = false
+	base.CanTouch = false; base.Transparency = 1
+	base.Size = Vector3.new(1, 1, 1)
+	base.CFrame = CFrame.new(position)
+	base.Parent = folder
+
+	local pe = Instance.new("ParticleEmitter")
+	pe.Color = ColorSequence.new(col)
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(0.4, 0.15),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pe.Lifetime = NumberRange.new(0.4, 0.8)
+	pe.Speed = NumberRange.new(4, 12)
+	pe.SpreadAngle = Vector2.new(360, 360)
+	pe.Rate = 0
+	pe.LightEmission = 1; pe.LightInfluence = 0
+	pe.Texture = "rbxassetid://6490035152"
+	pe.Drag = 3
+	pe.Parent = base
+	pe:Emit(25)
+
+	local darkCore = Instance.new("Part")
+	darkCore.Shape = Enum.PartType.Ball
+	darkCore.Anchored = true; darkCore.CanCollide = false
+	darkCore.CanQuery = false; darkCore.CanTouch = false; darkCore.CastShadow = false
+	darkCore.Material = Enum.Material.Neon
+	darkCore.Color = Color3.new(0, 0, 0)
+	darkCore.Size = Vector3.new(2, 2, 2)
+	darkCore.CFrame = CFrame.new(position)
+	darkCore.Transparency = 0.5
+	darkCore.Parent = folder
+
+	self.TweenService:Create(darkCore,
+		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(0.2, 0.2, 0.2), Transparency = 1}
+	):Play()
+
+	if victimChar then
+		for _, part in pairs(victimChar:GetDescendants()) do
+			if part:IsA("BasePart") then
+				pcall(function()
+					local stroke = Instance.new("SelectionBox")
+					stroke.Adornee = part; stroke.Color3 = col
+					stroke.LineThickness = 0.03; stroke.SurfaceTransparency = 0.9
+					stroke.Parent = part
+					self.TweenService:Create(stroke,
+						TweenInfo.new(0.8), {SurfaceTransparency = 1}
+					):Play()
+					self.Debris:AddItem(stroke, 1)
+				end)
+			end
+		end
+	end
+
+	self.Debris:AddItem(folder, 2.0)
+end
+
+function VisualsModule:PlayPixelFX(position, victimChar)
+	local col = self.KILLFX_COLOR
+	local folder = Instance.new("Folder")
+	folder.Name = "ArcPixelFX"
+	folder.Parent = self.Workspace
+
+	local cubeCount = 24
+	for i = 1, cubeCount do
+		local cube = Instance.new("Part")
+		cube.Shape = Enum.PartType.Block
+		cube.Anchored = true; cube.CanCollide = false
+		cube.CanQuery = false; cube.CanTouch = false; cube.CastShadow = false
+		cube.Material = Enum.Material.Neon
+
+		local shade = 0.6 + math.random() * 0.4
+		cube.Color = Color3.new(col.R * shade, col.G * shade, col.B * shade)
+
+		local s = 0.25 + math.random() * 0.5
+		cube.Size = Vector3.new(s, s, s)
+
+		local spread = 1.5
+		cube.CFrame = CFrame.new(
+			position.X + (math.random() - 0.5) * spread,
+			position.Y + (math.random() - 0.5) * spread,
+			position.Z + (math.random() - 0.5) * spread
+		) * CFrame.Angles(math.random() * math.pi, math.random() * math.pi, math.random() * math.pi)
+		cube.Transparency = 0
+		cube.Parent = folder
+
+		local targetDir = Vector3.new(
+			(math.random() - 0.5) * 2,
+			(math.random() - 0.5) * 2,
+			(math.random() - 0.5) * 2
+		).Unit
+
+		local dist = 4 + math.random() * 8
+		local targetPos = position + targetDir * dist
+
+		task.delay(math.random() * 0.15, function()
+			if not cube or not cube.Parent then return end
+			self.TweenService:Create(cube,
+				TweenInfo.new(0.5 + math.random() * 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{
+					CFrame = CFrame.new(targetPos) * CFrame.Angles(math.random() * math.pi * 2, math.random() * math.pi * 2, 0),
+					Transparency = 1,
+					Size = Vector3.new(0.05, 0.05, 0.05),
+				}
+			):Play()
+		end)
+	end
+
+	local flash = Instance.new("Part")
+	flash.Shape = Enum.PartType.Ball
+	flash.Anchored = true; flash.CanCollide = false
+	flash.CanQuery = false; flash.CanTouch = false; flash.CastShadow = false
+	flash.Material = Enum.Material.Neon
+	flash.Color = col
+	flash.Size = Vector3.new(2, 2, 2)
+	flash.CFrame = CFrame.new(position)
+	flash.Transparency = 0.3
+	flash.Parent = folder
+
+	self.TweenService:Create(flash,
+		TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Size = Vector3.new(5, 5, 5), Transparency = 1}
+	):Play()
+
+	self.Debris:AddItem(folder, 2.5)
+end
+
 function VisualsModule:FixFxInstance(fx, cf)
 	if fx:IsA("Model") then
 		for _, d in ipairs(fx:GetDescendants()) do
@@ -2371,6 +2897,14 @@ function VisualsModule:SetupKillFXListener()
 				self:PlayShatterFX(pos, char)
 			elseif self.KILLFX_TYPE == "Nova" then
 				self:PlayNovaFX(pos, char)
+			elseif self.KILLFX_TYPE == "Cascade" then
+				self:PlayCascadeFX(pos, char)
+			elseif self.KILLFX_TYPE == "Plasma" then
+				self:PlayPlasmaFX(pos, char)
+			elseif self.KILLFX_TYPE == "Reaper" then
+				self:PlayReaperFX(pos, char)
+			elseif self.KILLFX_TYPE == "Pixel" then
+				self:PlayPixelFX(pos, char)
 			end
 
 		end)

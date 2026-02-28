@@ -116,6 +116,12 @@ self.GHOST_FADE_POWER = 1.2
 	self._hitMarkerGui = nil
 	self._hitMarkerLines = {}
 
+	self.NEON_PLAYER_ENABLED = false
+	self.NEON_PLAYER_COLOR = Color3.fromRGB(255, 255, 255)
+	self._neonConn = nil
+	self._neonGlow = nil
+	self._origMaterials = {}
+
 	self.tracerPool = {}
 	self.MAX_TRACER_POOL = 12
 
@@ -544,14 +550,50 @@ function VisualsModule:CreateHelixTracer(startPos, endPos)
 	right = right.Unit
 	local up = dir:Cross(right).Unit
 
-	local segments = math.clamp(math.floor(distance / 1.5), 8, 40)
-	local radius = 0.6
-	local twists = distance / 6
+	local segments = math.clamp(math.floor(distance / 2), 6, 30)
+	local radius = 0.8
+	local twists = distance / 5
+
+	local strandColors = {
+		color,
+		Color3.new(
+			math.min(color.R * 0.6 + 0.4, 1),
+			math.min(color.G * 0.6 + 0.4, 1),
+			math.min(color.B * 0.6 + 0.4, 1)
+		),
+	}
 
 	for strand = 0, 1 do
-		local pts = {}
 		local phase = strand * math.pi
+		local sc = strandColors[strand + 1]
 
+		local mover = Instance.new("Part")
+		mover.Name = "HelixMover_" .. strand
+		mover.Anchored = true; mover.CanCollide = false
+		mover.CanQuery = false; mover.CanTouch = false; mover.CastShadow = false
+		mover.Transparency = 1
+		mover.Size = Vector3.new(0.1, 0.1, 0.1)
+		mover.Parent = folder
+
+		local a0 = Instance.new("Attachment"); a0.Name = "A0"; a0.Parent = mover
+		local a1 = Instance.new("Attachment"); a1.Name = "A1"
+		a1.Position = Vector3.new(0.15, 0, 0); a1.Parent = mover
+
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = a0; trail.Attachment1 = a1
+		trail.Color = ColorSequence.new(sc)
+		trail.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.1),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		trail.Lifetime = 0.5
+		trail.FaceCamera = true
+		trail.LightEmission = 0.9
+		trail.WidthScale = NumberSequence.new(0.12)
+		trail.Enabled = true
+		trail.Parent = mover
+
+		local pts = {}
 		for i = 0, segments do
 			local t = i / segments
 			local basePos = startPos + dir * (distance * t)
@@ -560,59 +602,37 @@ function VisualsModule:CreateHelixTracer(startPos, endPos)
 			table.insert(pts, basePos + offset)
 		end
 
-		for i = 1, #pts - 1 do
-			local p1 = pts[i]
-			local p2 = pts[i + 1]
-			local mid = (p1 + p2) / 2
-			local len = (p2 - p1).Magnitude
-
-			local seg = Instance.new("Part")
-			seg.Name = "HelixSeg"
-			seg.Anchored = true; seg.CanCollide = false
-			seg.CanQuery = false; seg.CanTouch = false; seg.CastShadow = false
-			seg.Material = Enum.Material.Neon
-			seg.Color = color
-			seg.Size = Vector3.new(0.06, 0.06, len)
-			seg.CFrame = CFrame.lookAt(mid, p2)
-			seg.Transparency = 0.15
-			seg.Parent = folder
-		end
-	end
-
-	local crossSegs = math.clamp(math.floor(segments / 3), 2, 10)
-	for i = 1, crossSegs do
-		local t = i / (crossSegs + 1)
-		local angle1 = t * twists * math.pi * 2
-		local angle2 = angle1 + math.pi
-		local basePos = startPos + dir * (distance * t)
-		local p1 = basePos + right * math.cos(angle1) * radius + up * math.sin(angle1) * radius
-		local p2 = basePos + right * math.cos(angle2) * radius + up * math.sin(angle2) * radius
-		local mid = (p1 + p2) / 2
-		local len = (p2 - p1).Magnitude
-
-		local cross = Instance.new("Part")
-		cross.Anchored = true; cross.CanCollide = false
-		cross.CanQuery = false; cross.CanTouch = false; cross.CastShadow = false
-		cross.Material = Enum.Material.Neon
-		cross.Color = color
-		cross.Size = Vector3.new(0.04, 0.04, len)
-		cross.CFrame = CFrame.lookAt(mid, p2)
-		cross.Transparency = 0.4
-		cross.Parent = folder
-	end
-
-	local lifetime = self.TRACER_LIFETIME * 0.8
-	task.delay(lifetime * 0.3, function()
-		for _, child in pairs(folder:GetChildren()) do
-			if child:IsA("BasePart") then
-				self.TweenService:Create(child,
-					TweenInfo.new(lifetime * 0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-					{Transparency = 1}
-				):Play()
+		task.spawn(function()
+			local flyTime = math.clamp(distance / 1800, 0.05, 0.25)
+			local stepTime = flyTime / #pts
+			for _, p in ipairs(pts) do
+				if not mover or not mover.Parent then break end
+				mover.CFrame = CFrame.new(p)
+				task.wait(stepTime)
 			end
+		end)
+	end
+
+	local corePart = Instance.new("Part")
+	corePart.Anchored = true; corePart.CanCollide = false
+	corePart.CanQuery = false; corePart.CanTouch = false; corePart.CastShadow = false
+	corePart.Material = Enum.Material.Neon
+	corePart.Color = color
+	corePart.Size = Vector3.new(0.04, 0.04, distance)
+	corePart.CFrame = CFrame.lookAt((startPos + endPos) / 2, endPos)
+	corePart.Transparency = 0.5
+	corePart.Parent = folder
+
+	local lifetime = self.TRACER_LIFETIME
+	task.delay(lifetime * 0.4, function()
+		if corePart and corePart.Parent then
+			self.TweenService:Create(corePart,
+				TweenInfo.new(lifetime * 0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+				{Transparency = 1}
+			):Play()
 		end
 	end)
-	self.Debris:AddItem(folder, lifetime + 0.2)
+	self.Debris:AddItem(folder, lifetime + 0.8)
 end
 
 function VisualsModule:CreatePulseTracer(startPos, endPos)
@@ -2492,6 +2512,7 @@ function VisualsModule:CreateBacktrackGhost()
 	end
 
 	local hasParts = false
+	local col = self.BACKTRACK_GHOST_COLOR
 	for _, v in pairs(ghost:GetDescendants()) do
 		if v:IsA("BasePart") then
 			hasParts = true
@@ -2500,15 +2521,24 @@ function VisualsModule:CreateBacktrackGhost()
 			v.CanTouch = false
 			v.CanQuery = false
 			v.Massless = true
-			v.Material = Enum.Material.ForceField
+			v.Material = Enum.Material.Neon
 			v.Transparency = self.GHOST_BASE_TRANSPARENCY
-			v.Color = self.BACKTRACK_GHOST_COLOR
+			v.Color = col
 			v.CastShadow = false
 
 			if v.Name == "Head" then
 				local face = v:FindFirstChild("face")
 				if face then face:Destroy() end
 			end
+
+			local selBox = Instance.new("SelectionBox")
+			selBox.Adornee = v
+			selBox.Color3 = col
+			selBox.LineThickness = 0.02
+			selBox.Transparency = 0.5
+			selBox.SurfaceTransparency = 0.85
+			selBox.SurfaceColor3 = col
+			selBox.Parent = v
 		end
 	end
 
@@ -2522,6 +2552,15 @@ function VisualsModule:CreateBacktrackGhost()
 		if v:IsA("BasePart") then
 			table.insert(self.ghostParts, v)
 		end
+	end
+
+	local rootP = ghost:FindFirstChild("HumanoidRootPart")
+	if rootP then
+		local glow = Instance.new("PointLight")
+		glow.Color = col
+		glow.Range = 6
+		glow.Brightness = 0.4
+		glow.Parent = rootP
 	end
 
 	ghost.Parent = self._ghostsFolder
@@ -2877,6 +2916,86 @@ function VisualsModule:SetHitMarkerEnabled(value)
 	self.HIT_MARKER_ENABLED = value
 end
 
+function VisualsModule:SetNeonPlayerEnabled(value)
+	self.NEON_PLAYER_ENABLED = value
+	if value then
+		self:ApplyNeonPlayer()
+	else
+		self:RemoveNeonPlayer()
+	end
+end
+
+function VisualsModule:SetNeonPlayerColor(value)
+	self.NEON_PLAYER_COLOR = value
+	if self.NEON_PLAYER_ENABLED then
+		self:ApplyNeonPlayer()
+	end
+end
+
+function VisualsModule:ApplyNeonPlayer()
+	self:RemoveNeonPlayer()
+	local char = self.player.Character
+	if not char then return end
+	local col = self.NEON_PLAYER_COLOR
+
+	for _, v in pairs(char:GetDescendants()) do
+		if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+			self._origMaterials[v] = v.Material
+			v.Material = Enum.Material.Neon
+			v.Color = col
+		end
+	end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local glow = Instance.new("PointLight")
+		glow.Name = "ArcNeonGlow"
+		glow.Color = col
+		glow.Range = 14
+		glow.Brightness = 1.2
+		glow.Parent = hrp
+		self._neonGlow = glow
+	end
+
+	self._neonConn = self.RunService.Heartbeat:Connect(function()
+		if not char or not char.Parent then
+			self:RemoveNeonPlayer()
+			return
+		end
+		for v, _ in pairs(self._origMaterials) do
+			if v and v.Parent then
+				v.Material = Enum.Material.Neon
+				v.Color = col
+			end
+		end
+	end)
+
+	if not self._neonCharConn then
+		self._neonCharConn = self.player.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			if self.NEON_PLAYER_ENABLED then
+				self:ApplyNeonPlayer()
+			end
+		end)
+	end
+end
+
+function VisualsModule:RemoveNeonPlayer()
+	if self._neonConn then
+		pcall(function() self._neonConn:Disconnect() end)
+		self._neonConn = nil
+	end
+	if self._neonGlow and self._neonGlow.Parent then
+		self._neonGlow:Destroy()
+		self._neonGlow = nil
+	end
+	for v, origMat in pairs(self._origMaterials) do
+		pcall(function()
+			if v and v.Parent then v.Material = origMat end
+		end)
+	end
+	self._origMaterials = {}
+end
 
 function VisualsModule:SetWallbangEnabled(value)
 	self.WALLBANG_ENABLED = value
@@ -3023,6 +3142,9 @@ function VisualsModule:GetSettings()
 
 		HIT_MARKER_ENABLED = self.HIT_MARKER_ENABLED,
 
+		NEON_PLAYER_ENABLED = self.NEON_PLAYER_ENABLED,
+		NEON_PLAYER_COLOR = colorToTable(self.NEON_PLAYER_COLOR),
+
 		ATMOSPHERE_ENABLED = self.ATMOSPHERE_ENABLED,
 		ATMOSPHERE_DENSITY = self.ATMOSPHERE_DENSITY,
 		ATMOSPHERE_OFFSET = self.ATMOSPHERE_OFFSET,
@@ -3101,6 +3223,9 @@ function VisualsModule:ApplySettings(settings)
 	if settings.JUMP_CIRCLES_COLOR then self:SetJumpCirclesColor(toColor3(settings.JUMP_CIRCLES_COLOR) or self.JUMP_CIRCLES_COLOR) end
 
 	if settings.HIT_MARKER_ENABLED ~= nil then self:SetHitMarkerEnabled(settings.HIT_MARKER_ENABLED) end
+
+	if settings.NEON_PLAYER_ENABLED ~= nil then self:SetNeonPlayerEnabled(settings.NEON_PLAYER_ENABLED) end
+	if settings.NEON_PLAYER_COLOR then self:SetNeonPlayerColor(toColor3(settings.NEON_PLAYER_COLOR) or self.NEON_PLAYER_COLOR) end
 
 	if settings.ATMOSPHERE_ENABLED ~= nil then self:SetAtmosphereEnabled(settings.ATMOSPHERE_ENABLED) end
 	if settings.ATMOSPHERE_DENSITY ~= nil then self:SetAtmosphereDensity(settings.ATMOSPHERE_DENSITY) end

@@ -887,16 +887,16 @@ function World:StartRain()
 	pe.EmissionDirection = Enum.NormalId.Bottom
 	pe.Acceleration = Vector3.new(0, -20, 0)
 	pe.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.08),
-		NumberSequenceKeypoint.new(1, 0.03),
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(1, 0.06),
 	})
 	pe.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.2),
-		NumberSequenceKeypoint.new(0.7, 0.4),
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.6, 0.2),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	pe.Color = ColorSequence.new(Color3.fromRGB(180, 200, 220))
-	pe.LightEmission = 0.1
+	pe.Color = ColorSequence.new(Color3.fromRGB(200, 215, 235))
+	pe.LightEmission = 0.15
 	pe.Drag = 0
 	self._rainEmitter = pe
 
@@ -955,29 +955,29 @@ function World:StartSnow()
 	att.Parent = part
 
 	local pe = Instance.new("ParticleEmitter")
-	pe.Parent = att
-	pe.Texture = "rbxassetid://241876428"
+	pe.Texture = "rbxassetid://6490035152"
 	pe.Rate = self.SNOW_DENSITY * 15
 	pe.Lifetime = NumberRange.new(4, 8)
 	pe.Speed = NumberRange.new(self.SNOW_SPEED, self.SNOW_SPEED + 5)
-	pe.SpreadAngle = Vector2.new(50, 50)
+	pe.SpreadAngle = Vector2.new(60, 60)
 	pe.Rotation = NumberRange.new(0, 360)
-	pe.RotSpeed = NumberRange.new(-60, 60)
+	pe.RotSpeed = NumberRange.new(-40, 40)
 	pe.EmissionDirection = Enum.NormalId.Bottom
-	pe.Acceleration = Vector3.new(0, -3, 0)
+	pe.Acceleration = Vector3.new(0, -2, 0)
 	pe.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.15),
-		NumberSequenceKeypoint.new(0.5, 0.25),
-		NumberSequenceKeypoint.new(1, 0.1),
+		NumberSequenceKeypoint.new(0, 0.12),
+		NumberSequenceKeypoint.new(0.5, 0.2),
+		NumberSequenceKeypoint.new(1, 0.08),
 	})
 	pe.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.7, 0.2),
+		NumberSequenceKeypoint.new(0.8, 0.15),
 		NumberSequenceKeypoint.new(1, 1),
 	})
-	pe.Color = ColorSequence.new(Color3.fromRGB(240, 245, 255))
-	pe.LightEmission = 0.2
-	pe.Drag = 2
+	pe.Color = ColorSequence.new(Color3.fromRGB(245, 248, 255))
+	pe.LightEmission = 0.3
+	pe.Drag = 3
+	pe.Parent = att
 	self._snowEmitter = pe
 
 	self._snowConn = RS.Heartbeat:Connect(function()
@@ -1057,6 +1057,7 @@ end
 
 function World:StartThunder()
 	self:StopThunder()
+	self.THUNDER_ENABLED = true
 
 	local part = self:_createWeatherPart("ArcThunder")
 	self._thunderPart = part

@@ -114,6 +114,14 @@ function ESPModule.new(config)
     self._data = {}
     self._connections = {}
 
+    -- Cached player list
+    self._playerCache = {}
+    self._playerCacheTick = 0
+    self._PLAYER_CACHE_RATE = 0.25
+
+    -- Max ESP render distance (studs)
+    self._MAX_ESP_DIST = 2000
+
     return self
 end
 
@@ -169,21 +177,12 @@ function ESPModule:SetBacktrackTransparency(v) self.BACKTRACK_TRANSPARENCY = v e
 -- ════════════════════════════════════════
 --  Utilities
 -- ════════════════════════════════════════
-function ESPModule:W2S(worldPos)
-    local cam = self.Workspace.CurrentCamera
-    if not cam then return nil, false end
-    local v, onScreen = cam:WorldToViewportPoint(worldPos)
-    if v.Z < 0 then return nil, false end
-    return Vector2.new(v.X, v.Y), onScreen
-end
-
 function ESPModule:IsTeammate(plr)
     if not self.player.Team or not plr.Team then return false end
     return self.player.Team == plr.Team
 end
 
 function ESPModule:GetHealthColor(ratio)
-    ratio = math.clamp(ratio, 0, 1)
     local lo = self.HEALTH_LOW_COLOR
     local hi = self.HEALTH_HIGH_COLOR
     return Color3.new(
@@ -193,12 +192,7 @@ function ESPModule:GetHealthColor(ratio)
     )
 end
 
-function ESPModule:GetBoundingBox(char)
-    local cam = self.Workspace.CurrentCamera
-    if not cam then return nil end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
+function ESPModule:GetBoundingBox(root, cam)
     local pos = root.Position
     local top = pos + Vector3.new(0, 3, 0)
     local btm = pos + Vector3.new(0, -3, 0)
@@ -222,13 +216,6 @@ function ESPModule:GetBoundingBox(char)
     }
 end
 
-function ESPModule:GetWeaponName(char)
-    for _, item in pairs(char:GetChildren()) do
-        if item:IsA("Tool") then return item.Name end
-    end
-    return nil
-end
-
 -- ════════════════════════════════════════
 --  Per-Player Data
 -- ════════════════════════════════════════
@@ -249,7 +236,13 @@ function ESPModule:CreateData()
         btHighlight = nil,
         btGhostTime = 0,
         btHistory = {},
+        btHead = 1,
+        btTail = 0,
         btLastRecord = 0,
+        cachedWeapon = nil,
+        cachedWeaponTick = 0,
+        lastChamsType = nil,
+        lastChamsDepth = nil,
     }
 
     for i = 1, 8 do d.corners[i] = newLine() end
@@ -277,14 +270,17 @@ end
 
 function ESPModule:HideAll(d)
     if not hasDrawing then return end
-    local function hide(obj) if obj then obj.Visible = false end end
 
-    hide(d.fullBox); hide(d.boxFill)
-    for _, l in ipairs(d.corners) do hide(l) end
-    hide(d.healthBg); hide(d.healthFill)
-    hide(d.nameText); hide(d.distText); hide(d.weaponText)
-    hide(d.tracer)
-    for _, l in ipairs(d.bones) do hide(l) end
+    if d.fullBox then d.fullBox.Visible = false end
+    if d.boxFill then d.boxFill.Visible = false end
+    for i = 1, 8 do local l = d.corners[i]; if l then l.Visible = false end end
+    if d.healthBg then d.healthBg.Visible = false end
+    if d.healthFill then d.healthFill.Visible = false end
+    if d.nameText then d.nameText.Visible = false end
+    if d.distText then d.distText.Visible = false end
+    if d.weaponText then d.weaponText.Visible = false end
+    if d.tracer then d.tracer.Visible = false end
+    for i = 1, #d.bones do local l = d.bones[i]; if l then l.Visible = false end end
     if d.btGhost then d.btGhost.Parent = nil end
     if d.btHighlight then d.btHighlight.Enabled = false end
     if d.highlight then d.highlight.Enabled = false end
@@ -299,14 +295,14 @@ function ESPModule:UpdateBox(d, bb)
     if not self.BOX_ENABLED then
         if d.fullBox then d.fullBox.Visible = false end
         if d.boxFill then d.boxFill.Visible = false end
-        for _, l in ipairs(d.corners) do if l then l.Visible = false end end
+        for i = 1, 8 do local l = d.corners[i]; if l then l.Visible = false end end
         return
     end
 
     local x, y, w, h = bb.x, bb.y, bb.w, bb.h
 
     if self.BOX_TYPE == "Full" then
-        for _, l in ipairs(d.corners) do if l then l.Visible = false end end
+        for i = 1, 8 do local l = d.corners[i]; if l then l.Visible = false end end
         if d.fullBox then
             d.fullBox.Position = Vector2.new(x, y)
             d.fullBox.Size = Vector2.new(w, h)
@@ -317,23 +313,17 @@ function ESPModule:UpdateBox(d, bb)
     else
         if d.fullBox then d.fullBox.Visible = false end
         local cl = math.max(w * 0.25, 6)
-        local pts = {
-            {Vector2.new(x, y), Vector2.new(x + cl, y)},
-            {Vector2.new(x, y), Vector2.new(x, y + cl)},
-            {Vector2.new(x + w, y), Vector2.new(x + w - cl, y)},
-            {Vector2.new(x + w, y), Vector2.new(x + w, y + cl)},
-            {Vector2.new(x, y + h), Vector2.new(x + cl, y + h)},
-            {Vector2.new(x, y + h), Vector2.new(x, y + h - cl)},
-            {Vector2.new(x + w, y + h), Vector2.new(x + w - cl, y + h)},
-            {Vector2.new(x + w, y + h), Vector2.new(x + w, y + h - cl)},
-        }
-        for i = 1, 8 do
-            local l = d.corners[i]
-            if l then
-                l.From = pts[i][1]; l.To = pts[i][2]
-                l.Color = self.BOX_COLOR; l.Thickness = 1; l.Visible = true
-            end
-        end
+        local xw, yh = x + w, y + h
+
+        local c = d.corners
+        if c[1] then c[1].From = Vector2.new(x, y);   c[1].To = Vector2.new(x + cl, y);   c[1].Color = self.BOX_COLOR; c[1].Visible = true end
+        if c[2] then c[2].From = Vector2.new(x, y);   c[2].To = Vector2.new(x, y + cl);   c[2].Color = self.BOX_COLOR; c[2].Visible = true end
+        if c[3] then c[3].From = Vector2.new(xw, y);  c[3].To = Vector2.new(xw - cl, y);  c[3].Color = self.BOX_COLOR; c[3].Visible = true end
+        if c[4] then c[4].From = Vector2.new(xw, y);  c[4].To = Vector2.new(xw, y + cl);  c[4].Color = self.BOX_COLOR; c[4].Visible = true end
+        if c[5] then c[5].From = Vector2.new(x, yh);  c[5].To = Vector2.new(x + cl, yh);  c[5].Color = self.BOX_COLOR; c[5].Visible = true end
+        if c[6] then c[6].From = Vector2.new(x, yh);  c[6].To = Vector2.new(x, yh - cl);  c[6].Color = self.BOX_COLOR; c[6].Visible = true end
+        if c[7] then c[7].From = Vector2.new(xw, yh); c[7].To = Vector2.new(xw - cl, yh); c[7].Color = self.BOX_COLOR; c[7].Visible = true end
+        if c[8] then c[8].From = Vector2.new(xw, yh); c[8].To = Vector2.new(xw, yh - cl); c[8].Color = self.BOX_COLOR; c[8].Visible = true end
     end
 
     if d.boxFill then
@@ -410,7 +400,15 @@ function ESPModule:UpdateInfo(d, bb, targetPlayer, distance, char)
     end
 
     if self.WEAPON_ENABLED and d.weaponText then
-        local wep = self:GetWeaponName(char)
+        local now = tick()
+        local wep = d.cachedWeapon
+        if now - d.cachedWeaponTick > 0.3 then
+            d.cachedWeaponTick = now
+            wep = nil
+            local tool = char:FindFirstChildOfClass("Tool")
+            if tool then wep = tool.Name end
+            d.cachedWeapon = wep
+        end
         if wep then
             d.weaponText.Text = wep
             d.weaponText.Color = self.WEAPON_COLOR
@@ -445,16 +443,18 @@ function ESPModule:UpdateTracer(d, bb, vpSize)
     d.tracer.Visible = true
 end
 
-function ESPModule:UpdateSkeleton(d, char, camera)
+function ESPModule:UpdateSkeleton(d, char, cam)
     if not hasDrawing then return end
     if not self.SKELETON_ENABLED then
-        for _, l in ipairs(d.bones) do if l then l.Visible = false end end
+        for i = 1, #d.bones do local l = d.bones[i]; if l then l.Visible = false end end
         return
     end
 
     local isR15 = char:FindFirstChild("UpperTorso") ~= nil
     local boneList = isR15 and BONES_R15 or BONES_R6
     local idx = 0
+    local skelColor = self.SKELETON_COLOR
+    local skelThick = self.SKELETON_THICKNESS
 
     for _, pair in ipairs(boneList) do
         idx = idx + 1
@@ -465,12 +465,13 @@ function ESPModule:UpdateSkeleton(d, char, camera)
         local p2 = char:FindFirstChild(pair[2])
 
         if p1 and p2 then
-            local s1, v1 = self:W2S(p1.Position)
-            local s2, v2 = self:W2S(p2.Position)
-            if s1 and s2 and (v1 or v2) then
-                l.From = s1; l.To = s2
-                l.Color = self.SKELETON_COLOR
-                l.Thickness = self.SKELETON_THICKNESS
+            local v1 = cam:WorldToViewportPoint(p1.Position)
+            local v2 = cam:WorldToViewportPoint(p2.Position)
+            if v1.Z > 0 or v2.Z > 0 then
+                l.From = Vector2.new(v1.X, v1.Y)
+                l.To = Vector2.new(v2.X, v2.Y)
+                l.Color = skelColor
+                l.Thickness = skelThick
                 l.Visible = true
             else
                 l.Visible = false
@@ -485,9 +486,10 @@ function ESPModule:UpdateSkeleton(d, char, camera)
     end
 end
 
-function ESPModule:UpdateChams(d, char, targetPlayer)
+function ESPModule:UpdateChams(d, char)
     if not self.CHAMS_ENABLED then
         if d.highlight then d.highlight.Enabled = false end
+        d.lastChamsType = nil
         return
     end
 
@@ -501,39 +503,56 @@ function ESPModule:UpdateChams(d, char, targetPlayer)
     end
 
     local hl = d.highlight
-    hl.Adornee = char
-    hl.Parent = char
-
-    local t = self.CHAMS_TYPE
-    if t == "Outline" then
-        hl.FillTransparency = 1
-        hl.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
-        hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
-    elseif t == "Solid" then
-        hl.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
-        hl.FillColor = self.CHAMS_FILL_COLOR
-        hl.OutlineTransparency = 1
-    elseif t == "Outline+Solid" then
-        hl.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
-        hl.FillColor = self.CHAMS_FILL_COLOR
-        hl.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
-        hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
-    elseif t == "Glow" then
-        hl.FillTransparency = 0.3
-        hl.FillColor = self.CHAMS_FILL_COLOR
-        hl.OutlineTransparency = 0
-        hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
-    elseif t == "Wireframe" then
-        hl.FillTransparency = 1
-        hl.OutlineTransparency = 0
-        hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
-        hl.DepthMode = Enum.HighlightDepthMode.Occluded
+    if hl.Adornee ~= char then
+        hl.Adornee = char
+        hl.Parent = char
     end
 
-    if t ~= "Wireframe" then
-        hl.DepthMode = self.CHAMS_DEPTH == "AlwaysOnTop"
-            and Enum.HighlightDepthMode.AlwaysOnTop
-            or Enum.HighlightDepthMode.Occluded
+    local t = self.CHAMS_TYPE
+    local depth = self.CHAMS_DEPTH
+    local needsUpdate = (t ~= d.lastChamsType) or (depth ~= d.lastChamsDepth)
+
+    if needsUpdate then
+        d.lastChamsType = t
+        d.lastChamsDepth = depth
+
+        if t == "Outline" then
+            hl.FillTransparency = 1
+            hl.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
+            hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        elseif t == "Solid" then
+            hl.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
+            hl.FillColor = self.CHAMS_FILL_COLOR
+            hl.OutlineTransparency = 1
+        elseif t == "Outline+Solid" then
+            hl.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
+            hl.FillColor = self.CHAMS_FILL_COLOR
+            hl.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
+            hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        elseif t == "Glow" then
+            hl.FillTransparency = 0.3
+            hl.FillColor = self.CHAMS_FILL_COLOR
+            hl.OutlineTransparency = 0
+            hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        elseif t == "Wireframe" then
+            hl.FillTransparency = 1
+            hl.OutlineTransparency = 0
+            hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
+            hl.DepthMode = Enum.HighlightDepthMode.Occluded
+        end
+
+        if t ~= "Wireframe" then
+            hl.DepthMode = depth == "AlwaysOnTop"
+                and Enum.HighlightDepthMode.AlwaysOnTop
+                or Enum.HighlightDepthMode.Occluded
+        end
+    else
+        if t == "Outline" or t == "Glow" or t == "Wireframe" or t == "Outline+Solid" then
+            hl.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        end
+        if t == "Solid" or t == "Outline+Solid" or t == "Glow" then
+            hl.FillColor = self.CHAMS_FILL_COLOR
+        end
     end
 
     hl.Enabled = true
@@ -563,7 +582,7 @@ function ESPModule:CreateGhost(char)
     return ok and ghost or nil
 end
 
-function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
+function ESPModule:UpdateBacktrack(d, char, root, targetPlayer)
     local shouldShow = self.BACKTRACK_ENABLED
     if shouldShow and self.TEAM_CHECK and self:IsTeammate(targetPlayer) then
         shouldShow = false
@@ -573,20 +592,25 @@ function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
         if d.btGhost then d.btGhost.Parent = nil end
         if d.btHighlight then d.btHighlight.Enabled = false end
         d.btHistory = {}
+        d.btHead = 1
+        d.btTail = 0
         return
     end
 
     local now = tick()
     if now - d.btLastRecord >= BT_INTERVAL then
         d.btLastRecord = now
-        table.insert(d.btHistory, { t = now, cf = root.CFrame })
+        d.btTail = d.btTail + 1
+        d.btHistory[d.btTail] = { t = now, cf = root.CFrame }
 
-        while #d.btHistory > 0 and (now - d.btHistory[1].t) > self.BACKTRACK_DURATION do
-            table.remove(d.btHistory, 1)
+        while d.btHead <= d.btTail and (now - d.btHistory[d.btHead].t) > self.BACKTRACK_DURATION do
+            d.btHistory[d.btHead] = nil
+            d.btHead = d.btHead + 1
         end
     end
 
-    if #d.btHistory < 2 then
+    local count = d.btTail - d.btHead + 1
+    if count < 2 then
         if d.btGhost then d.btGhost.Parent = nil end
         if d.btHighlight then d.btHighlight.Enabled = false end
         return
@@ -600,9 +624,11 @@ function ESPModule:UpdateBacktrack(d, char, camera, root, targetPlayer)
 
     if not d.btGhost then return end
 
-    local oldest = d.btHistory[1]
-    pcall(function() d.btGhost:PivotTo(oldest.cf) end)
-    d.btGhost.Parent = self.Workspace
+    local oldest = d.btHistory[d.btHead]
+    if oldest then
+        pcall(function() d.btGhost:PivotTo(oldest.cf) end)
+        d.btGhost.Parent = self.Workspace
+    end
 
     if not d.btHighlight then
         local ok, hl = pcall(function()
@@ -637,7 +663,17 @@ function ESPModule:Update()
     local myPos = myRoot and myRoot.Position
     local vpSize = cam.ViewportSize
 
-    for _, plr in ipairs(self.Players:GetPlayers()) do
+    local now = tick()
+    if now - self._playerCacheTick >= self._PLAYER_CACHE_RATE then
+        self._playerCacheTick = now
+        self._playerCache = self.Players:GetPlayers()
+    end
+
+    local anyDrawingFeature = self.BOX_ENABLED or self.HEALTH_ENABLED
+        or self.NAME_ENABLED or self.DISTANCE_ENABLED or self.WEAPON_ENABLED
+        or self.TRACERS_ENABLED or self.SKELETON_ENABLED
+
+    for _, plr in ipairs(self._playerCache) do
         local d = self._data[plr]
         if not d then
             d = self:CreateData()
@@ -659,21 +695,29 @@ function ESPModule:Update()
             continue
         end
 
-        local bb = self:GetBoundingBox(char)
-        if not bb then
+        local dist = myPos and (root.Position - myPos).Magnitude or 0
+
+        if dist > self._MAX_ESP_DIST then
             self:HideAll(d)
             continue
         end
 
-        local dist = myPos and (root.Position - myPos).Magnitude or 0
+        if anyDrawingFeature then
+            local bb = self:GetBoundingBox(root, cam)
+            if not bb then
+                self:HideAll(d)
+                continue
+            end
 
-        self:UpdateBox(d, bb)
-        self:UpdateHealth(d, bb, hum)
-        self:UpdateInfo(d, bb, plr, dist, char)
-        self:UpdateTracer(d, bb, vpSize)
-        self:UpdateSkeleton(d, char, cam)
-        self:UpdateChams(d, char, plr)
-        self:UpdateBacktrack(d, char, cam, root, plr)
+            self:UpdateBox(d, bb)
+            self:UpdateHealth(d, bb, hum)
+            self:UpdateInfo(d, bb, plr, dist, char)
+            self:UpdateTracer(d, bb, vpSize)
+            self:UpdateSkeleton(d, char, cam)
+        end
+
+        self:UpdateChams(d, char)
+        self:UpdateBacktrack(d, char, root, plr)
     end
 
     for plr, _ in pairs(self._data) do
@@ -690,7 +734,7 @@ function ESPModule:Start()
     if self._renderConn then return end
 
     self._renderConn = self.RunService.RenderStepped:Connect(function()
-        pcall(function() self:Update() end)
+        self:Update()
     end)
 
     self._playerLeftConn = self.Players.PlayerRemoving:Connect(function(plr)

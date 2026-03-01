@@ -44,9 +44,10 @@ function RageModule.new(config)
 
 	-- Anti-Aims
 	self.REMOVE_HEAD_ENABLED = false
-	self._removeHeadConn = nil
+	self._removeHeadTrack = nil
+	self._removeHeadAnimObj = nil
 	self._removeHeadCharConn = nil
-	self._neckOrigC0 = nil
+	self._cachedBypassAnimId = nil
 
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 10
@@ -994,49 +995,124 @@ end
 -- ============================================
 -- ANTI-AIMS
 -- ============================================
-function RageModule:_findNeck()
-	local char = self.player.Character
-	if not char then return nil end
-	local head = char:FindFirstChild("Head")
-	if not head then return nil end
-	for _, desc in ipairs(char:GetDescendants()) do
-		if desc:IsA("Motor6D") and desc.Part1 == head then
-			return desc
-		end
+function RageModule:_resolveAnimationId(assetId)
+	if self._cachedBypassAnimId then
+		return self._cachedBypassAnimId
 	end
-	return nil
+
+	local rawId = "rbxassetid://" .. tostring(assetId)
+
+	-- Method 1: KeyframeSequenceProvider bypass
+	-- Downloads keyframe data and re-registers it under a local hash URL
+	-- that is not subject to the game's animation ID sanitization
+	pcall(function()
+		local KSP = game:GetService("KeyframeSequenceProvider")
+		local ks = KSP:GetKeyframeSequenceAsync(rawId)
+		if ks then
+			self._cachedBypassAnimId = KSP:RegisterKeyframeSequence(ks)
+		end
+	end)
+	if self._cachedBypassAnimId then return self._cachedBypassAnimId end
+
+	-- Method 2: game:GetObjects extraction
+	-- Loads the asset directly and searches for Animation/KeyframeSequence objects
+	pcall(function()
+		local objects = game:GetObjects(rawId)
+		if not objects then return end
+		for _, obj in ipairs(objects) do
+			if obj:IsA("KeyframeSequence") then
+				local KSP = game:GetService("KeyframeSequenceProvider")
+				self._cachedBypassAnimId = KSP:RegisterKeyframeSequence(obj)
+				return
+			end
+			if obj:IsA("Animation") then
+				local innerRaw = obj.AnimationId
+				pcall(function()
+					local KSP = game:GetService("KeyframeSequenceProvider")
+					local ks2 = KSP:GetKeyframeSequenceAsync(innerRaw)
+					if ks2 then
+						self._cachedBypassAnimId = KSP:RegisterKeyframeSequence(ks2)
+					end
+				end)
+				if self._cachedBypassAnimId then return end
+				self._cachedBypassAnimId = innerRaw
+				return
+			end
+			for _, desc in ipairs(obj:GetDescendants()) do
+				if desc:IsA("KeyframeSequence") then
+					local KSP = game:GetService("KeyframeSequenceProvider")
+					self._cachedBypassAnimId = KSP:RegisterKeyframeSequence(desc)
+					return
+				end
+				if desc:IsA("Animation") then
+					local innerRaw2 = desc.AnimationId
+					pcall(function()
+						local KSP = game:GetService("KeyframeSequenceProvider")
+						local ks3 = KSP:GetKeyframeSequenceAsync(innerRaw2)
+						if ks3 then
+							self._cachedBypassAnimId = KSP:RegisterKeyframeSequence(ks3)
+						end
+					end)
+					if self._cachedBypassAnimId then return end
+					self._cachedBypassAnimId = innerRaw2
+					return
+				end
+			end
+		end
+	end)
+	if self._cachedBypassAnimId then return self._cachedBypassAnimId end
+
+	-- Method 3: Direct ID as last resort
+	self._cachedBypassAnimId = rawId
+	return rawId
 end
 
 function RageModule:_startRemoveHead()
 	self:_stopRemoveHead()
 
-	local neck = self:_findNeck()
-	if not neck then return end
+	local char = self.player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
 
-	self._neckOrigC0 = neck.C0
+	local animId = self:_resolveAnimationId(98193399505416)
 
-	self._removeHeadConn = self.RunService.Heartbeat:Connect(function()
-		if not neck or not neck.Parent then
-			if self._removeHeadConn then
-				self._removeHeadConn:Disconnect()
-				self._removeHeadConn = nil
-			end
-			return
-		end
-		neck.C0 = self._neckOrigC0 * CFrame.new(0, -100, 0)
-	end)
+	local anim = Instance.new("Animation")
+	anim.AnimationId = animId
+	self._removeHeadAnimObj = anim
+
+	local track
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if animator then
+		local ok, t = pcall(function() return animator:LoadAnimation(anim) end)
+		if ok then track = t end
+	end
+	if not track then
+		local ok2, t2 = pcall(function() return hum:LoadAnimation(anim) end)
+		if ok2 then track = t2 end
+	end
+
+	if not track then
+		warn("[Arcanum] Remove Head: all animation methods failed")
+		return
+	end
+
+	self._removeHeadTrack = track
+	track.Looped = true
+	track.Priority = Enum.AnimationPriority.Action4
+	track:Play()
 end
 
 function RageModule:_stopRemoveHead()
-	if self._removeHeadConn then
-		self._removeHeadConn:Disconnect()
-		self._removeHeadConn = nil
+	if self._removeHeadTrack then
+		pcall(function() self._removeHeadTrack:Stop() end)
+		pcall(function() self._removeHeadTrack:Destroy() end)
+		self._removeHeadTrack = nil
 	end
-	local neck = self:_findNeck()
-	if neck and self._neckOrigC0 then
-		pcall(function() neck.C0 = self._neckOrigC0 end)
+	if self._removeHeadAnimObj then
+		pcall(function() self._removeHeadAnimObj:Destroy() end)
+		self._removeHeadAnimObj = nil
 	end
-	self._neckOrigC0 = nil
 end
 
 function RageModule:SetRemoveHeadEnabled(value)

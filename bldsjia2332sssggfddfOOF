@@ -188,12 +188,14 @@ function World.new()
 	self.RAIN_SPEED = 30
 	self._rainPart = nil
 	self._rainEmitter = nil
+	self._rainConn = nil
 
 	self.SNOW_ENABLED = false
 	self.SNOW_DENSITY = 40
 	self.SNOW_SPEED = 10
 	self._snowPart = nil
 	self._snowEmitter = nil
+	self._snowConn = nil
 
 	self.THUNDER_ENABLED = false
 	self.THUNDER_DENSITY = 50
@@ -202,6 +204,7 @@ function World.new()
 	self._thunderPart = nil
 	self._thunderEmitter = nil
 	self._thunderConn = nil
+	self._thunderPosConn = nil
 
 	self.FOG_ENABLED = false
 	self.FOG_START = 0
@@ -836,7 +839,7 @@ end
 function World:_updateWeatherPartPos(part)
 	local cam = Workspace.CurrentCamera
 	if cam then
-		part.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 80, 0))
+		part.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 30, 0))
 	end
 end
 
@@ -876,35 +879,39 @@ function World:StartRain()
 	pe.Parent = att
 	pe.Texture = "rbxassetid://241876428"
 	pe.Rate = self.RAIN_DENSITY * 20
-	pe.Lifetime = NumberRange.new(0.8, 1.5)
-	pe.Speed = NumberRange.new(self.RAIN_SPEED, self.RAIN_SPEED + 10)
-	pe.SpreadAngle = Vector2.new(15, 15)
+	pe.Lifetime = NumberRange.new(1.5, 3)
+	pe.Speed = NumberRange.new(self.RAIN_SPEED, self.RAIN_SPEED + 15)
+	pe.SpreadAngle = Vector2.new(25, 25)
 	pe.Rotation = NumberRange.new(0, 0)
 	pe.RotSpeed = NumberRange.new(0, 0)
 	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Acceleration = Vector3.new(0, -20, 0)
 	pe.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.05),
-		NumberSequenceKeypoint.new(1, 0.02),
+		NumberSequenceKeypoint.new(0, 0.08),
+		NumberSequenceKeypoint.new(1, 0.03),
 	})
 	pe.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(0.8, 0.5),
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(0.7, 0.4),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	pe.Color = ColorSequence.new(Color3.fromRGB(180, 200, 220))
-	pe.LightEmission = 0.05
+	pe.LightEmission = 0.1
 	pe.Drag = 0
 	self._rainEmitter = pe
 
-	local conn = RS.Heartbeat:Connect(function()
+	self._rainConn = RS.Heartbeat:Connect(function()
 		if part and part.Parent then
 			self:_updateWeatherPartPos(part)
 		end
 	end)
-	table.insert(self._connections, conn)
 end
 
 function World:StopRain()
+	if self._rainConn then
+		pcall(function() self._rainConn:Disconnect() end)
+		self._rainConn = nil
+	end
 	if self._rainPart then
 		pcall(function() self._rainPart:Destroy() end)
 		self._rainPart = nil
@@ -951,36 +958,40 @@ function World:StartSnow()
 	pe.Parent = att
 	pe.Texture = "rbxassetid://241876428"
 	pe.Rate = self.SNOW_DENSITY * 15
-	pe.Lifetime = NumberRange.new(3, 6)
+	pe.Lifetime = NumberRange.new(4, 8)
 	pe.Speed = NumberRange.new(self.SNOW_SPEED, self.SNOW_SPEED + 5)
-	pe.SpreadAngle = Vector2.new(40, 40)
+	pe.SpreadAngle = Vector2.new(50, 50)
 	pe.Rotation = NumberRange.new(0, 360)
 	pe.RotSpeed = NumberRange.new(-60, 60)
 	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Acceleration = Vector3.new(0, -3, 0)
 	pe.Size = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0.15),
-		NumberSequenceKeypoint.new(0.5, 0.2),
+		NumberSequenceKeypoint.new(0.5, 0.25),
 		NumberSequenceKeypoint.new(1, 0.1),
 	})
 	pe.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.1),
-		NumberSequenceKeypoint.new(0.7, 0.3),
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.7, 0.2),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	pe.Color = ColorSequence.new(Color3.fromRGB(240, 245, 255))
-	pe.LightEmission = 0.15
-	pe.Drag = 3
+	pe.LightEmission = 0.2
+	pe.Drag = 2
 	self._snowEmitter = pe
 
-	local conn = RS.Heartbeat:Connect(function()
+	self._snowConn = RS.Heartbeat:Connect(function()
 		if part and part.Parent then
 			self:_updateWeatherPartPos(part)
 		end
 	end)
-	table.insert(self._connections, conn)
 end
 
 function World:StopSnow()
+	if self._snowConn then
+		pcall(function() self._snowConn:Disconnect() end)
+		self._snowConn = nil
+	end
 	if self._snowPart then
 		pcall(function() self._snowPart:Destroy() end)
 		self._snowPart = nil
@@ -1057,32 +1068,32 @@ function World:StartThunder()
 	pe.Parent = att
 	pe.Texture = "rbxassetid://241876428"
 	pe.Rate = self.THUNDER_DENSITY * 20
-	pe.Lifetime = NumberRange.new(0.8, 1.5)
-	pe.Speed = NumberRange.new(self.THUNDER_SPEED, self.THUNDER_SPEED + 10)
-	pe.SpreadAngle = Vector2.new(15, 15)
+	pe.Lifetime = NumberRange.new(1.5, 3)
+	pe.Speed = NumberRange.new(self.THUNDER_SPEED, self.THUNDER_SPEED + 15)
+	pe.SpreadAngle = Vector2.new(25, 25)
 	pe.Rotation = NumberRange.new(0, 0)
 	pe.RotSpeed = NumberRange.new(0, 0)
 	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Acceleration = Vector3.new(0, -20, 0)
 	pe.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.05),
-		NumberSequenceKeypoint.new(1, 0.02),
+		NumberSequenceKeypoint.new(0, 0.08),
+		NumberSequenceKeypoint.new(1, 0.03),
 	})
 	pe.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(0.8, 0.5),
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(0.7, 0.4),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	pe.Color = ColorSequence.new(Color3.fromRGB(160, 175, 200))
-	pe.LightEmission = 0.05
+	pe.LightEmission = 0.1
 	pe.Drag = 0
 	self._thunderEmitter = pe
 
-	local posConn = RS.Heartbeat:Connect(function()
+	self._thunderPosConn = RS.Heartbeat:Connect(function()
 		if part and part.Parent then
 			self:_updateWeatherPartPos(part)
 		end
 	end)
-	table.insert(self._connections, posConn)
 
 	task.spawn(function()
 		while self.THUNDER_ENABLED do
@@ -1100,6 +1111,10 @@ end
 
 function World:StopThunder()
 	self.THUNDER_ENABLED = false
+	if self._thunderPosConn then
+		pcall(function() self._thunderPosConn:Disconnect() end)
+		self._thunderPosConn = nil
+	end
 	if self._thunderPart then
 		pcall(function() self._thunderPart:Destroy() end)
 		self._thunderPart = nil
@@ -1145,9 +1160,23 @@ function World:ApplyFog()
 	Lighting.FogStart = self.FOG_START
 	Lighting.FogEnd = self.FOG_END
 	Lighting.FogColor = self.FOG_COLOR
+
+	if self._fogConn then
+		pcall(function() self._fogConn:Disconnect() end)
+	end
+	self._fogConn = RS.Heartbeat:Connect(function()
+		if not self.FOG_ENABLED then return end
+		Lighting.FogStart = self.FOG_START
+		Lighting.FogEnd = self.FOG_END
+		Lighting.FogColor = self.FOG_COLOR
+	end)
 end
 
 function World:RemoveFog()
+	if self._fogConn then
+		pcall(function() self._fogConn:Disconnect() end)
+		self._fogConn = nil
+	end
 	Lighting.FogStart = self._origFog.FogStart
 	Lighting.FogEnd = self._origFog.FogEnd
 	Lighting.FogColor = self._origFog.FogColor
@@ -1170,7 +1199,7 @@ function World:Unload()
 	self:StopRain()
 	self:StopSnow()
 	self:StopThunder()
-	if self.FOG_ENABLED then self:RemoveFog() end
+	self:RemoveFog()
 
 	if self.BLUR_ENABLED and self._blurEffect then
 		self._blurEffect:Destroy()

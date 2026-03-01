@@ -44,9 +44,9 @@ function RageModule.new(config)
 
 	-- Anti-Aims
 	self.REMOVE_HEAD_ENABLED = false
-	self._removeHeadTrack = nil
-	self._removeHeadAnim = nil
+	self._removeHeadConn = nil
 	self._removeHeadCharConn = nil
+	self._neckOrigC0 = nil
 
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 10
@@ -994,44 +994,49 @@ end
 -- ============================================
 -- ANTI-AIMS
 -- ============================================
-function RageModule:_playRemoveHead()
+function RageModule:_findNeck()
 	local char = self.player.Character
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
+	if not char then return nil end
+	local head = char:FindFirstChild("Head")
+	if not head then return nil end
+	for _, desc in ipairs(char:GetDescendants()) do
+		if desc:IsA("Motor6D") and desc.Part1 == head then
+			return desc
+		end
+	end
+	return nil
+end
 
+function RageModule:_startRemoveHead()
 	self:_stopRemoveHead()
 
-	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://98193399505416"
-	self._removeHeadAnim = anim
+	local neck = self:_findNeck()
+	if not neck then return end
 
-	local ok, track = pcall(function()
-		return hum:FindFirstChildOfClass("Animator"):LoadAnimation(anim)
+	self._neckOrigC0 = neck.C0
+
+	self._removeHeadConn = self.RunService.Heartbeat:Connect(function()
+		if not neck or not neck.Parent then
+			if self._removeHeadConn then
+				self._removeHeadConn:Disconnect()
+				self._removeHeadConn = nil
+			end
+			return
+		end
+		neck.C0 = self._neckOrigC0 * CFrame.new(0, -100, 0)
 	end)
-	if not ok or not track then
-		pcall(function()
-			track = hum:LoadAnimation(anim)
-		end)
-	end
-	if not track then return end
-
-	self._removeHeadTrack = track
-	track.Looped = true
-	track.Priority = Enum.AnimationPriority.Action4
-	track:Play()
 end
 
 function RageModule:_stopRemoveHead()
-	if self._removeHeadTrack then
-		pcall(function() self._removeHeadTrack:Stop() end)
-		pcall(function() self._removeHeadTrack:Destroy() end)
-		self._removeHeadTrack = nil
+	if self._removeHeadConn then
+		self._removeHeadConn:Disconnect()
+		self._removeHeadConn = nil
 	end
-	if self._removeHeadAnim then
-		pcall(function() self._removeHeadAnim:Destroy() end)
-		self._removeHeadAnim = nil
+	local neck = self:_findNeck()
+	if neck and self._neckOrigC0 then
+		pcall(function() neck.C0 = self._neckOrigC0 end)
 	end
+	self._neckOrigC0 = nil
 end
 
 function RageModule:SetRemoveHeadEnabled(value)
@@ -1043,11 +1048,11 @@ function RageModule:SetRemoveHeadEnabled(value)
 	end
 
 	if value then
-		self:_playRemoveHead()
+		self:_startRemoveHead()
 		self._removeHeadCharConn = self.player.CharacterAdded:Connect(function()
 			task.wait(0.5)
 			if self.REMOVE_HEAD_ENABLED then
-				self:_playRemoveHead()
+				self:_startRemoveHead()
 			end
 		end)
 	else

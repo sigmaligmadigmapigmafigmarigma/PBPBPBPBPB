@@ -216,6 +216,29 @@ function World.new()
 		FogColor = Lighting.FogColor,
 	}
 
+	-- Model Changer
+	self.MODEL_CHANGER_ENABLED = false
+	self.MODEL_CHANGER_CURRENT = "None"
+	self._savedAppearance = nil
+	self._modelCharConn = nil
+
+	self.MODEL_PRESETS = {
+		["Big Smoke"]       = { type = "catalog", id = 109672142364753 },
+		["CT Agent"]        = { type = "catalog", id = 17492888433 },
+		["Omni Man"]        = { type = "catalog", id = 116337723668725 },
+		["Tommy"]           = { type = "catalog", id = 78897905328829 },
+		["Knight"]          = { type = "catalog", id = 110422361106705 },
+		["Meowl"]           = { type = "catalog", id = 125560415251749 },
+		["Chicken"]         = { type = "catalog", id = 111084270237373 },
+		["Wither Skeleton"] = { type = "catalog", id = 88917815539525 },
+		["Hulk"]            = { type = "bundle", id = 1628082012614 },
+		["CJ"]              = { type = "bundle", id = 147560561555974 },
+		["Pepe"]            = { type = "bundle", id = 43473732500207 },
+		["El Gato"]         = { type = "bundle", id = 679795 },
+		["Freddy"]          = { type = "bundle", id = 25711413546443 },
+		["Skeleton"]        = { type = "bundle", id = 15021396217542 },
+	}
+
 	self._unloadCallbacks = {}
 	self._connections = {}
 
@@ -1184,6 +1207,224 @@ function World:RemoveFog()
 end
 
 -- ═══════════════════════════════════════════════════
+--  Model Changer
+-- ═══════════════════════════════════════════════════
+
+function World:_saveAppearance()
+	if self._savedAppearance then return end
+	local char = player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	local saved = {
+		shirt = nil,
+		pants = nil,
+		tshirt = nil,
+		bodyColors = nil,
+		accessories = {},
+		transparency = {},
+		meshIds = {},
+	}
+
+	local s = char:FindFirstChildOfClass("Shirt")
+	if s then saved.shirt = s:Clone() end
+	local p = char:FindFirstChildOfClass("Pants")
+	if p then saved.pants = p:Clone() end
+	local t = char:FindFirstChildOfClass("ShirtGraphic")
+	if t then saved.tshirt = t:Clone() end
+	local bc = char:FindFirstChild("Body Colors") or char:FindFirstChildOfClass("BodyColors")
+	if bc then saved.bodyColors = bc:Clone() end
+
+	for _, acc in ipairs(hum:GetAccessories()) do
+		table.insert(saved.accessories, acc:Clone())
+	end
+
+	for _, part in ipairs(char:GetChildren()) do
+		if part:IsA("BasePart") then
+			saved.transparency[part.Name] = part.Transparency
+		end
+		if part:IsA("MeshPart") then
+			saved.meshIds[part.Name] = part.MeshId
+		end
+	end
+
+	self._savedAppearance = saved
+end
+
+function World:RevertModel()
+	local char = player.Character
+	if not char or not self._savedAppearance then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local saved = self._savedAppearance
+
+	local s = char:FindFirstChildOfClass("Shirt")
+	if s then s:Destroy() end
+	local p = char:FindFirstChildOfClass("Pants")
+	if p then p:Destroy() end
+	local t = char:FindFirstChildOfClass("ShirtGraphic")
+	if t then t:Destroy() end
+
+	for _, acc in ipairs(hum:GetAccessories()) do
+		acc:Destroy()
+	end
+
+	if saved.shirt then saved.shirt:Clone().Parent = char end
+	if saved.pants then saved.pants:Clone().Parent = char end
+	if saved.tshirt then saved.tshirt:Clone().Parent = char end
+
+	if saved.bodyColors then
+		local bc = char:FindFirstChild("Body Colors") or char:FindFirstChildOfClass("BodyColors")
+		if bc then bc:Destroy() end
+		saved.bodyColors:Clone().Parent = char
+	end
+
+	for _, accClone in ipairs(saved.accessories) do
+		pcall(function() hum:AddAccessory(accClone:Clone()) end)
+	end
+
+	for _, part in ipairs(char:GetChildren()) do
+		if part:IsA("BasePart") and saved.transparency[part.Name] then
+			part.Transparency = saved.transparency[part.Name]
+		end
+		if part:IsA("MeshPart") and saved.meshIds[part.Name] then
+			pcall(function() part.MeshId = saved.meshIds[part.Name] end)
+		end
+	end
+
+	for _, child in ipairs(char:GetChildren()) do
+		if child.Name == "_ArcModelPart" then child:Destroy() end
+	end
+end
+
+function World:_applyObjects(objects, char, hum)
+	for _, obj in ipairs(objects) do
+		if obj:IsA("Shirt") then
+			local existing = char:FindFirstChildOfClass("Shirt")
+			if existing then existing:Destroy() end
+			obj.Parent = char
+		elseif obj:IsA("Pants") then
+			local existing = char:FindFirstChildOfClass("Pants")
+			if existing then existing:Destroy() end
+			obj.Parent = char
+		elseif obj:IsA("ShirtGraphic") then
+			local existing = char:FindFirstChildOfClass("ShirtGraphic")
+			if existing then existing:Destroy() end
+			obj.Parent = char
+		elseif obj:IsA("Accessory") or obj:IsA("Hat") then
+			pcall(function() hum:AddAccessory(obj) end)
+		elseif obj:IsA("CharacterMesh") then
+			obj.Parent = char
+		elseif obj:IsA("Model") or obj:IsA("Folder") then
+			for _, child in ipairs(obj:GetChildren()) do
+				self:_applyObjects({child}, char, hum)
+			end
+		end
+	end
+end
+
+function World:ApplyModel(modelName)
+	if modelName == "None" then
+		self:RevertModel()
+		return
+	end
+
+	local preset = self.MODEL_PRESETS[modelName]
+	if not preset then return end
+
+	local char = player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	self:_saveAppearance()
+
+	local existS = char:FindFirstChildOfClass("Shirt")
+	if existS then existS:Destroy() end
+	local existP = char:FindFirstChildOfClass("Pants")
+	if existP then existP:Destroy() end
+	local existT = char:FindFirstChildOfClass("ShirtGraphic")
+	if existT then existT:Destroy() end
+	for _, acc in ipairs(hum:GetAccessories()) do
+		acc:Destroy()
+	end
+
+	if preset.type == "catalog" then
+		pcall(function()
+			local objects = game:GetObjects("rbxassetid://" .. preset.id)
+			self:_applyObjects(objects, char, hum)
+		end)
+
+	elseif preset.type == "bundle" then
+		pcall(function()
+			local HttpService = game:GetService("HttpService")
+			local raw = game:HttpGet("https://catalog.roblox.com/v1/bundles/" .. preset.id .. "/details")
+			local json = HttpService:JSONDecode(raw)
+			if json and json.items then
+				for _, item in ipairs(json.items) do
+					if item.id and item.type == "Asset" then
+						pcall(function()
+							local objs = game:GetObjects("rbxassetid://" .. item.id)
+							self:_applyObjects(objs, char, hum)
+						end)
+					end
+				end
+			end
+		end)
+	end
+end
+
+function World:SetModelChangerEnabled(v)
+	self.MODEL_CHANGER_ENABLED = v
+
+	if self._modelCharConn then
+		self._modelCharConn:Disconnect()
+		self._modelCharConn = nil
+	end
+
+	if v then
+		if self.MODEL_CHANGER_CURRENT ~= "None" then
+			self:ApplyModel(self.MODEL_CHANGER_CURRENT)
+		end
+		self._modelCharConn = player.CharacterAdded:Connect(function()
+			task.wait(1)
+			if self.MODEL_CHANGER_ENABLED and self.MODEL_CHANGER_CURRENT ~= "None" then
+				self._savedAppearance = nil
+				self:ApplyModel(self.MODEL_CHANGER_CURRENT)
+			end
+		end)
+	else
+		self:RevertModel()
+		self._savedAppearance = nil
+	end
+end
+
+function World:SetModelPreset(name)
+	self.MODEL_CHANGER_CURRENT = name
+	if self.MODEL_CHANGER_ENABLED then
+		if self._savedAppearance then
+			self:RevertModel()
+			self._savedAppearance = nil
+		end
+		self:ApplyModel(name)
+	end
+end
+
+function World:GetModelNames()
+	local names = {"None"}
+	for name, _ in pairs(self.MODEL_PRESETS) do
+		table.insert(names, name)
+	end
+	table.sort(names, function(a, b)
+		if a == "None" then return true end
+		if b == "None" then return false end
+		return a < b
+	end)
+	return names
+end
+
+-- ═══════════════════════════════════════════════════
 --  Unload
 -- ═══════════════════════════════════════════════════
 
@@ -1201,6 +1442,9 @@ function World:Unload()
 	self:StopSnow()
 	self:StopThunder()
 	self:RemoveFog()
+	if self.MODEL_CHANGER_ENABLED then
+		self:SetModelChangerEnabled(false)
+	end
 
 	if self.BLUR_ENABLED and self._blurEffect then
 		self._blurEffect:Destroy()

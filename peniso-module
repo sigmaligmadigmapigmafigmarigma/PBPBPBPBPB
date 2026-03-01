@@ -47,6 +47,7 @@ function RageModule.new(config)
 	self._removeHeadTrack = nil
 	self._removeHeadAnimObj = nil
 	self._removeHeadCharConn = nil
+	self._removeHeadNoclipConn = nil
 	self._cachedBypassAnimId = nil
 
 	self.RAPIDFIRE_ENABLED = false
@@ -1101,9 +1102,23 @@ function RageModule:_startRemoveHead()
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action4
 	track:Play()
+
+	self._removeHeadNoclipConn = self.RunService.Stepped:Connect(function()
+		local c = self.player.Character
+		if not c then return end
+		for _, part in ipairs(c:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end)
 end
 
 function RageModule:_stopRemoveHead()
+	if self._removeHeadNoclipConn then
+		self._removeHeadNoclipConn:Disconnect()
+		self._removeHeadNoclipConn = nil
+	end
 	if self._removeHeadTrack then
 		pcall(function() self._removeHeadTrack:Stop() end)
 		pcall(function() self._removeHeadTrack:Destroy() end)

@@ -42,6 +42,12 @@ function RageModule.new(config)
 	self.OVERRIDE_TARGET_ENABLED = false
 	self.OVERRIDE_TARGET_LIST = {} -- table of player names
 
+	-- Anti-Aims
+	self.REMOVE_HEAD_ENABLED = false
+	self._removeHeadTrack = nil
+	self._removeHeadAnim = nil
+	self._removeHeadCharConn = nil
+
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 10
 	self.RAPIDFIRE_MODE = "Automatic"
@@ -983,6 +989,70 @@ function RageModule:GetEnemyPlayers()
 		end
 	end
 	return enemies
+end
+
+-- ============================================
+-- ANTI-AIMS
+-- ============================================
+function RageModule:_playRemoveHead()
+	local char = self.player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	self:_stopRemoveHead()
+
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://98193399505416"
+	self._removeHeadAnim = anim
+
+	local ok, track = pcall(function()
+		return hum:FindFirstChildOfClass("Animator"):LoadAnimation(anim)
+	end)
+	if not ok or not track then
+		pcall(function()
+			track = hum:LoadAnimation(anim)
+		end)
+	end
+	if not track then return end
+
+	self._removeHeadTrack = track
+	track.Looped = true
+	track.Priority = Enum.AnimationPriority.Action4
+	track:Play()
+end
+
+function RageModule:_stopRemoveHead()
+	if self._removeHeadTrack then
+		pcall(function() self._removeHeadTrack:Stop() end)
+		pcall(function() self._removeHeadTrack:Destroy() end)
+		self._removeHeadTrack = nil
+	end
+	if self._removeHeadAnim then
+		pcall(function() self._removeHeadAnim:Destroy() end)
+		self._removeHeadAnim = nil
+	end
+end
+
+function RageModule:SetRemoveHeadEnabled(value)
+	self.REMOVE_HEAD_ENABLED = value
+
+	if self._removeHeadCharConn then
+		self._removeHeadCharConn:Disconnect()
+		self._removeHeadCharConn = nil
+	end
+
+	if value then
+		self:_playRemoveHead()
+		self._removeHeadCharConn = self.player.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			if self.REMOVE_HEAD_ENABLED then
+				self:_playRemoveHead()
+			end
+		end)
+	else
+		self:_stopRemoveHead()
+	end
 end
 
 function RageModule:SetRapidfireShots(value)

@@ -217,26 +217,26 @@ function World.new()
 	}
 
 	-- Model Changer
+	-- Format: {headIds, torsoIds, headTransparency, bodyTransparency, keepHead, isHeadAccessory, rotation}
 	self.MODEL_CHANGER_ENABLED = false
 	self.MODEL_CHANGER_CURRENT = "None"
-	self._savedAppearance = nil
 	self._modelCharConn = nil
 
 	self.MODEL_PRESETS = {
-		["Big Smoke"]       = { type = "catalog", id = 109672142364753 },
-		["CT Agent"]        = { type = "catalog", id = 17492888433 },
-		["Omni Man"]        = { type = "catalog", id = 116337723668725 },
-		["Tommy"]           = { type = "catalog", id = 78897905328829 },
-		["Knight"]          = { type = "catalog", id = 110422361106705 },
-		["Meowl"]           = { type = "catalog", id = 125560415251749 },
-		["Chicken"]         = { type = "catalog", id = 111084270237373 },
-		["Wither Skeleton"] = { type = "catalog", id = 88917815539525 },
-		["Hulk"]            = { type = "bundle", id = 1628082012614 },
-		["CJ"]              = { type = "bundle", id = 147560561555974 },
-		["Pepe"]            = { type = "bundle", id = 43473732500207 },
-		["El Gato"]         = { type = "bundle", id = 679795 },
-		["Freddy"]          = { type = "bundle", id = 25711413546443 },
-		["Skeleton"]        = { type = "bundle", id = 15021396217542 },
+		["Big Smoke"]       = {{}, {109672142364753}, 1, 1, false, false, nil},
+		["CT Agent"]        = {{}, {17492888433}, 1, 1, false, false, nil},
+		["Omni Man"]        = {{}, {116337723668725}, 1, 1, false, false, nil},
+		["Tommy"]           = {{}, {78897905328829}, 1, 1, false, false, nil},
+		["Knight"]          = {{}, {110422361106705}, 1, 1, false, false, nil},
+		["Meowl"]           = {{}, {125560415251749}, 1, 1, false, false, nil},
+		["Chicken"]         = {{}, {111084270237373}, 1, 1, false, false, nil},
+		["Wither Skeleton"] = {{}, {88917815539525}, 1, 1, false, false, nil},
+		["Pepe"]            = {{}, {43473732500207}, 1, 1, false, false, nil},
+		["El Gato"]         = {{}, {679795}, 1, 1, false, false, nil},
+		["Freddy"]          = {{}, {25711413546443}, 1, 1, false, false, nil},
+		["Skeleton"]        = {{}, {15021396217542}, 1, 1, false, false, nil},
+		["Hulk"]            = {{}, {1628082012614}, 1, 1, false, false, nil},
+		["CJ"]              = {{}, {147560561555974}, 1, 1, false, false, nil},
 	}
 
 	self._unloadCallbacks = {}
@@ -1210,203 +1210,122 @@ end
 --  Model Changer
 -- ═══════════════════════════════════════════════════
 
-function World:_saveAppearance()
-	if self._savedAppearance then return end
-	local char = player.Character
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
+function World:ApplyModel(name)
+	if name == "None" or not self.MODEL_PRESETS[name] then return end
+	local d = self.MODEL_PRESETS[name]
+	local headIds, torsoIds, headT, bodyT, keepHead, isHeadAcc, rotation = d[1], d[2], d[3], d[4], d[5], d[6], d[7]
 
-	local saved = {
-		shirt = nil,
-		pants = nil,
-		tshirt = nil,
-		bodyColors = nil,
-		accessories = {},
-		transparency = {},
-		meshIds = {},
-	}
+	local function onChar(char)
+		task.wait(0.5)
+		if not char or not char.Parent then return end
 
-	local s = char:FindFirstChildOfClass("Shirt")
-	if s then saved.shirt = s:Clone() end
-	local p = char:FindFirstChildOfClass("Pants")
-	if p then saved.pants = p:Clone() end
-	local t = char:FindFirstChildOfClass("ShirtGraphic")
-	if t then saved.tshirt = t:Clone() end
-	local bc = char:FindFirstChild("Body Colors") or char:FindFirstChildOfClass("BodyColors")
-	if bc then saved.bodyColors = bc:Clone() end
-
-	for _, acc in ipairs(hum:GetAccessories()) do
-		table.insert(saved.accessories, acc:Clone())
-	end
-
-	for _, part in ipairs(char:GetChildren()) do
-		if part:IsA("BasePart") then
-			saved.transparency[part.Name] = part.Transparency
-		end
-		if part:IsA("MeshPart") then
-			saved.meshIds[part.Name] = part.MeshId
-		end
-	end
-
-	self._savedAppearance = saved
-end
-
-function World:RevertModel()
-	local char = player.Character
-	if not char or not self._savedAppearance then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	local saved = self._savedAppearance
-
-	local s = char:FindFirstChildOfClass("Shirt")
-	if s then s:Destroy() end
-	local p = char:FindFirstChildOfClass("Pants")
-	if p then p:Destroy() end
-	local t = char:FindFirstChildOfClass("ShirtGraphic")
-	if t then t:Destroy() end
-
-	for _, acc in ipairs(hum:GetAccessories()) do
-		acc:Destroy()
-	end
-
-	if saved.shirt then saved.shirt:Clone().Parent = char end
-	if saved.pants then saved.pants:Clone().Parent = char end
-	if saved.tshirt then saved.tshirt:Clone().Parent = char end
-
-	if saved.bodyColors then
-		local bc = char:FindFirstChild("Body Colors") or char:FindFirstChildOfClass("BodyColors")
-		if bc then bc:Destroy() end
-		saved.bodyColors:Clone().Parent = char
-	end
-
-	for _, accClone in ipairs(saved.accessories) do
-		pcall(function() hum:AddAccessory(accClone:Clone()) end)
-	end
-
-	for _, part in ipairs(char:GetChildren()) do
-		if part:IsA("BasePart") and saved.transparency[part.Name] then
-			part.Transparency = saved.transparency[part.Name]
-		end
-		if part:IsA("MeshPart") and saved.meshIds[part.Name] then
-			pcall(function() part.MeshId = saved.meshIds[part.Name] end)
-		end
-	end
-
-	for _, child in ipairs(char:GetChildren()) do
-		if child.Name == "_ArcModelPart" then child:Destroy() end
-	end
-end
-
-function World:_applyObjects(objects, char, hum)
-	for _, obj in ipairs(objects) do
-		if obj:IsA("Shirt") then
-			local existing = char:FindFirstChildOfClass("Shirt")
-			if existing then existing:Destroy() end
-			obj.Parent = char
-		elseif obj:IsA("Pants") then
-			local existing = char:FindFirstChildOfClass("Pants")
-			if existing then existing:Destroy() end
-			obj.Parent = char
-		elseif obj:IsA("ShirtGraphic") then
-			local existing = char:FindFirstChildOfClass("ShirtGraphic")
-			if existing then existing:Destroy() end
-			obj.Parent = char
-		elseif obj:IsA("Accessory") or obj:IsA("Hat") then
-			pcall(function() hum:AddAccessory(obj) end)
-		elseif obj:IsA("CharacterMesh") then
-			obj.Parent = char
-		elseif obj:IsA("Model") or obj:IsA("Folder") then
-			for _, child in ipairs(obj:GetChildren()) do
-				self:_applyObjects({child}, char, hum)
+		for _, child in ipairs(char:GetChildren()) do
+			if child:IsA("Accessory") then
+				local isHA = false
+				local handle = child:FindFirstChild("Handle")
+				if handle then
+					local weld = handle:FindFirstChildOfClass("Weld")
+					if weld and ((weld.Part0 and weld.Part0.Name == "Head") or (weld.Part1 and weld.Part1.Name == "Head")) then
+						isHA = true
+					end
+				end
+				if not keepHead or not isHA then child:Destroy() end
 			end
 		end
-	end
-end
 
-function World:ApplyModel(modelName)
-	if modelName == "None" then
-		self:RevertModel()
-		return
-	end
-
-	local preset = self.MODEL_PRESETS[modelName]
-	if not preset then return end
-
-	local char = player.Character
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-
-	self:_saveAppearance()
-
-	local existS = char:FindFirstChildOfClass("Shirt")
-	if existS then existS:Destroy() end
-	local existP = char:FindFirstChildOfClass("Pants")
-	if existP then existP:Destroy() end
-	local existT = char:FindFirstChildOfClass("ShirtGraphic")
-	if existT then existT:Destroy() end
-	for _, acc in ipairs(hum:GetAccessories()) do
-		acc:Destroy()
-	end
-
-	if preset.type == "catalog" then
-		pcall(function()
-			local objects = game:GetObjects("rbxassetid://" .. preset.id)
-			self:_applyObjects(objects, char, hum)
-		end)
-
-	elseif preset.type == "bundle" then
-		pcall(function()
-			local HttpService = game:GetService("HttpService")
-			local raw = game:HttpGet("https://catalog.roblox.com/v1/bundles/" .. preset.id .. "/details")
-			local json = HttpService:JSONDecode(raw)
-			if json and json.items then
-				for _, item in ipairs(json.items) do
-					if item.id and item.type == "Asset" then
-						pcall(function()
-							local objs = game:GetObjects("rbxassetid://" .. item.id)
-							self:_applyObjects(objs, char, hum)
-						end)
+		for _, desc in ipairs(char:GetChildren()) do
+			if desc:IsA("BasePart") and desc.Name ~= "HumanoidRootPart" then
+				desc.Transparency = desc.Name == "Head" and headT or bodyT
+				if desc.Name == "UpperTorso" then
+					for _, decal in ipairs(desc:GetChildren()) do
+						if decal:IsA("Decal") then decal:Destroy() end
 					end
 				end
 			end
-		end)
-	end
-end
+		end
 
-function World:SetModelChangerEnabled(v)
-	self.MODEL_CHANGER_ENABLED = v
+		local head = char:FindFirstChild("Head")
+		if headT == 1 and head then
+			local face = head:FindFirstChild("face") or head:FindFirstChild("Face")
+			if face then face:Destroy() end
+		end
+
+		local torsoPart = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+
+		for _, id in ipairs(headIds) do
+			task.spawn(function()
+				local ok, acc = pcall(function() return game:GetObjects("rbxassetid://" .. id)[1] end)
+				if ok and acc and head then
+					if isHeadAcc then
+						acc.Parent = char
+						local handle = acc:FindFirstChild("Handle")
+						if handle then
+							handle.CanCollide = false
+							local w = Instance.new("Weld")
+							w.Part0, w.Part1 = head, handle
+							w.C0 = rotation or CFrame.new(0, 0, 0)
+							w.Parent = head
+						end
+					else
+						acc.Parent = char
+						local handle = acc:FindFirstChild("Handle")
+						if handle then
+							handle.CanCollide = false
+							local w = Instance.new("Weld")
+							w.Part0, w.Part1 = head, handle
+							local baseOffset = CFrame.new(0, head.Size.Y / 2, 0)
+							w.C0 = rotation and (baseOffset * rotation) or baseOffset
+							w.Parent = head
+						end
+					end
+				end
+			end)
+		end
+
+		if torsoPart then
+			for _, id in ipairs(torsoIds) do
+				task.spawn(function()
+					local ok, acc = pcall(function() return game:GetObjects("rbxassetid://" .. id)[1] end)
+					if ok and acc then
+						acc.Parent = char
+						local handle = acc:FindFirstChild("Handle")
+						if handle then
+							handle.CanCollide = false
+							local w = Instance.new("Weld")
+							w.Part0, w.Part1, w.C0 = torsoPart, handle, CFrame.new(0, 0, 0)
+							w.Parent = torsoPart
+						end
+					end
+				end)
+			end
+		end
+	end
 
 	if self._modelCharConn then
 		self._modelCharConn:Disconnect()
 		self._modelCharConn = nil
 	end
+	self._modelCharConn = player.CharacterAdded:Connect(onChar)
+	if player.Character then onChar(player.Character) end
+end
 
+function World:SetModelChangerEnabled(v)
+	self.MODEL_CHANGER_ENABLED = v
 	if v then
 		if self.MODEL_CHANGER_CURRENT ~= "None" then
 			self:ApplyModel(self.MODEL_CHANGER_CURRENT)
 		end
-		self._modelCharConn = player.CharacterAdded:Connect(function()
-			task.wait(1)
-			if self.MODEL_CHANGER_ENABLED and self.MODEL_CHANGER_CURRENT ~= "None" then
-				self._savedAppearance = nil
-				self:ApplyModel(self.MODEL_CHANGER_CURRENT)
-			end
-		end)
 	else
-		self:RevertModel()
-		self._savedAppearance = nil
+		if self._modelCharConn then
+			self._modelCharConn:Disconnect()
+			self._modelCharConn = nil
+		end
 	end
 end
 
 function World:SetModelPreset(name)
 	self.MODEL_CHANGER_CURRENT = name
 	if self.MODEL_CHANGER_ENABLED then
-		if self._savedAppearance then
-			self:RevertModel()
-			self._savedAppearance = nil
-		end
 		self:ApplyModel(name)
 	end
 end

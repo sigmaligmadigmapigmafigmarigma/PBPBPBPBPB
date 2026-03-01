@@ -324,12 +324,10 @@ function VisualsModule:PlayHitSound()
 
 	local CUSTOM_SOUNDS = {
 		bell = "rbxassetid://7112391013",
-		["Apple Pay"] = "rbxassetid://82415663525492",
-		["Low Honour"] = "rbxassetid://116963486461562",
-		["Error"] = "rbxassetid://95509039020568",
-		["Fatality"] = "rbxassetid://138378419413244",
-		["Bite"] = "rbxassetid://100889026666638",
-		["Fart"] = "rbxassetid://84308809034758",
+		["apple pay"] = "rbxassetid://82415663525492",
+		["low honour"] = "rbxassetid://116963486461562",
+		["error"] = "rbxassetid://95509039020568",
+		["fatality"] = "rbxassetid://138378419413244",
 	}
 
 	if CUSTOM_SOUNDS[self.HITSOUND_PRESET] then

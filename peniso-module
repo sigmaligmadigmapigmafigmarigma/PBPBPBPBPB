@@ -38,6 +38,10 @@ function RageModule.new(config)
 	self.DT_COOLDOWN = 1.5
 	self.DT_MAXDIST_OVERRIDE = false
 
+	-- Override Target
+	self.OVERRIDE_TARGET_ENABLED = false
+	self.OVERRIDE_TARGET_LIST = {} -- table of player names
+
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 10
 	self.RAPIDFIRE_MODE = "Automatic"
@@ -380,9 +384,22 @@ function RageModule:FindTarget()
 	local bestDist = self:GetEffectiveMaxDist()
 	local myPos = myHead.Position
 
+	local filterByOverride = self.DT_MAXDIST_OVERRIDE and self.OVERRIDE_TARGET_ENABLED and #self.OVERRIDE_TARGET_LIST > 0
+
 	for _, data in ipairs(self.activePlayers) do
 		if not data.humanoid or data.humanoid.Health <= 0 then continue end
 		if not data.rootPart or not data.rootPart.Parent then continue end
+
+		if filterByOverride then
+			local found = false
+			for _, tName in ipairs(self.OVERRIDE_TARGET_LIST) do
+				if data.player.Name == tName or data.player.DisplayName == tName then
+					found = true
+					break
+				end
+			end
+			if not found then continue end
+		end
 
 		local dist = (data.rootPart.Position - myPos).Magnitude
 		if dist > bestDist then continue end
@@ -415,7 +432,6 @@ function RageModule:FindTarget()
 			end
 
 		else
-			-- Fast visibility check: only 3 key parts instead of 9
 			local visible = false
 			for _, partName in ipairs(self._VISIBILITY_FAST) do
 				local p = data.character:FindFirstChild(partName)
@@ -539,9 +555,22 @@ function RageModule:FindNearestEnemy()
 	local bestTarget
 	local bestDist = self.DT_MAXDIST_OVERRIDE and 99999 or (self.DOUBLETAP_MAX_TP_DIST + 80)
 
+	local filterByOverride = self.DT_MAXDIST_OVERRIDE and self.OVERRIDE_TARGET_ENABLED and #self.OVERRIDE_TARGET_LIST > 0
+
 	for _, data in ipairs(self.activePlayers) do
 		if not data.humanoid or data.humanoid.Health <= 0 then continue end
 		if not data.rootPart or not data.rootPart.Parent then continue end
+
+		if filterByOverride then
+			local found = false
+			for _, tName in ipairs(self.OVERRIDE_TARGET_LIST) do
+				if data.player.Name == tName or data.player.DisplayName == tName then
+					found = true
+					break
+				end
+			end
+			if not found then continue end
+		end
 
 		local dist = (data.rootPart.Position - hrp.Position).Magnitude
 		if dist > bestDist then continue end
@@ -936,6 +965,24 @@ end
 
 function RageModule:SetMaxDistOverride(value)
 	self.DT_MAXDIST_OVERRIDE = value
+end
+
+function RageModule:SetOverrideTargetEnabled(value)
+	self.OVERRIDE_TARGET_ENABLED = value
+end
+
+function RageModule:SetOverrideTargetList(list)
+	self.OVERRIDE_TARGET_LIST = list or {}
+end
+
+function RageModule:GetEnemyPlayers()
+	local enemies = {}
+	for _, p in ipairs(self.Players:GetPlayers()) do
+		if p ~= self.player and self:IsEnemy(p) then
+			table.insert(enemies, p.DisplayName)
+		end
+	end
+	return enemies
 end
 
 function RageModule:SetRapidfireShots(value)

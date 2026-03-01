@@ -1,11 +1,10 @@
--- RAGE MODULE
+-- RAGE MODULE (Optimized)
 local RageModule = {}
 RageModule.__index = RageModule
 
 function RageModule.new(config)
 	local self = setmetatable({}, RageModule)
 
-	-- Services
 	self.player = config.Player
 	self.Players = config.Services.Players
 	self.RunService = config.Services.RunService
@@ -14,7 +13,6 @@ function RageModule.new(config)
 	self.Notification = config.Notification
 	self.Visuals = config.Visuals
 
-	-- Settings
 	self.RAGE_ENABLED = false
 	self.RAGE_HITPART = "Head"
 	self.RAGE_HITCHANCE = 100
@@ -33,7 +31,6 @@ function RageModule.new(config)
 	self.MIN_DAMAGE_VALUE = 0
 	self.BASE_DAMAGE = 54
 
-	-- Double Tap
 	self.DOUBLETAP_ENABLED = false
 	self.DOUBLETAP_TELEPORT = true
 	self.DOUBLETAP_MAX_TP_DIST = 15
@@ -41,7 +38,6 @@ function RageModule.new(config)
 	self.DT_COOLDOWN = 1.5
 	self.DT_MAXDIST_OVERRIDE = false
 
-	-- Rapidfire (CS2-style)
 	self.RAPIDFIRE_ENABLED = false
 	self.RAPIDFIRE_SHOTS = 10
 	self.RAPIDFIRE_MODE = "Automatic"
@@ -51,7 +47,6 @@ function RageModule.new(config)
 	self._rfSteppedConn = nil
 	self._rfRenderConn = nil
 
-	-- Internal state
 	self.lastShot = 0
 	self.FIRE_RATE = 0.1
 	self.FIRE_RATE_AWP = 1.3
@@ -62,6 +57,20 @@ function RageModule.new(config)
 	self.lastPlayerListUpdate = 0
 	self.PLAYER_LIST_UPDATE_RATE = 0.5
 	self.autoEquippedOnce = false
+
+	-- Cached raycast params (reused every call)
+	self._rayParams = RaycastParams.new()
+	self._rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	self._rayParams.IgnoreWater = true
+
+	-- Gun cache
+	self._cachedGun = nil
+	self._cachedGunTick = 0
+	self._GUN_CACHE_RATE = 0.15
+
+	-- Heartbeat throttle
+	self._lastHeartbeat = 0
+	self._HEARTBEAT_INTERVAL = 1 / 60
 
 	self.BODY_PART_MULTIPLIERS = {
 		["Head"] = 4.0,
@@ -91,6 +100,9 @@ function RageModule.new(config)
 		{name = "Body", parts = {"UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}, multiplier = 1.0},
 		{name = "Head", parts = {"Head"}, multiplier = 4.0},
 	}
+
+	-- Reduced fallback part lists for visibility checks (fewer raycasts)
+	self._VISIBILITY_FAST = {"Head", "UpperTorso", "HumanoidRootPart"}
 
 	return self
 end
@@ -139,8 +151,22 @@ function RageModule:IsInAir()
 end
 
 function RageModule:GetGun()
+	local now = tick()
+	if self._cachedGun and (now - self._cachedGunTick) < self._GUN_CACHE_RATE then
+		if self._cachedGun.type == "AWP" and self._cachedGun.fireShot and self._cachedGun.fireShot.Parent then
+			return self._cachedGun
+		elseif self._cachedGun.type == "CastRay" and self._cachedGun.castRay and self._cachedGun.castRay.Parent
+			and self._cachedGun.hole and self._cachedGun.hole.Parent then
+			return self._cachedGun
+		end
+		self._cachedGun = nil
+	end
+
 	local char = self.player.Character
-	if not char then return nil end
+	if not char then
+		self._cachedGun = nil
+		return nil
+	end
 
 	for _, item in pairs(char:GetChildren()) do
 		if item:IsA("Tool") then
@@ -148,18 +174,23 @@ function RageModule:GetGun()
 			if remotes then
 				local fireShot = remotes:FindFirstChild("FireShot")
 				if fireShot then
-					return {type = "AWP", fireShot = fireShot, fireRate = self.FIRE_RATE_AWP}
+					self._cachedGun = {type = "AWP", fireShot = fireShot, fireRate = self.FIRE_RATE_AWP}
+					self._cachedGunTick = now
+					return self._cachedGun
 				end
 
 				local castRay = remotes:FindFirstChild("CastRay")
 				local hole = item:FindFirstChild("Hole")
 				if castRay and hole then
-					return {type = "CastRay", castRay = castRay, hole = hole, fireRate = self.FIRE_RATE}
+					self._cachedGun = {type = "CastRay", castRay = castRay, hole = hole, fireRate = self.FIRE_RATE}
+					self._cachedGunTick = now
+					return self._cachedGun
 				end
 			end
 		end
 	end
 
+	self._cachedGun = nil
 	return nil
 end
 
@@ -180,35 +211,15 @@ function RageModule:GetBestVisiblePart(char, distance)
 	local priorities
 
 	if self.RAGE_HITPART == "Head" then
-		priorities = {
-			"Head",
-			"UpperTorso",
-			"LowerTorso",
-			"Torso",
-			"HumanoidRootPart",
-		}
+		priorities = {"Head", "UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}
 	elseif self.RAGE_HITPART == "Body" then
-		priorities = {
-			"UpperTorso",
-			"LowerTorso",
-			"Torso",
-			"HumanoidRootPart",
-			"Head",
-		}
+		priorities = {"UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart", "Head"}
 	elseif self.RAGE_HITPART == "Arms" then
-		priorities = {
-			"RightUpperArm","LeftUpperArm","Right Arm","Left Arm",
-			"UpperTorso","Torso",
-		}
+		priorities = {"RightUpperArm", "LeftUpperArm", "Right Arm", "Left Arm", "UpperTorso", "Torso"}
 	elseif self.RAGE_HITPART == "Legs" then
-		priorities = {
-			"RightUpperLeg","LeftUpperLeg","Right Leg","Left Leg",
-			"LowerTorso","Torso",
-		}
+		priorities = {"RightUpperLeg", "LeftUpperLeg", "Right Leg", "Left Leg", "LowerTorso", "Torso"}
 	else
-		priorities = {
-			"Head","UpperTorso","Torso","HumanoidRootPart"
-		}
+		priorities = {"Head", "UpperTorso", "Torso", "HumanoidRootPart"}
 	end
 
 	for _, partName in ipairs(priorities) do
@@ -258,7 +269,6 @@ end
 
 function RageModule:IsPartVisible(targetPart, targetChar)
 	if not targetPart or not targetPart.Parent then return false end
-	if not self:IsAlive() then return false end
 
 	local myChar = self.player.Character
 	if not myChar then return false end
@@ -273,16 +283,13 @@ function RageModule:IsPartVisible(targetPart, targetChar)
 	if dist < 0.1 then return true end
 	if dist > self:GetEffectiveMaxDist() then return false end
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude    
-	params.FilterDescendantsInstances = {myChar}
-	params.IgnoreWater = true
+	self._rayParams.FilterDescendantsInstances = {myChar}
 
 	local unit = dir.Unit
 	local curOrigin = origin
 
-	for _ = 1, 6 do
-		local res = self.Workspace:Raycast(curOrigin, targetPos - curOrigin, params)
+	for _ = 1, 4 do
+		local res = self.Workspace:Raycast(curOrigin, targetPos - curOrigin, self._rayParams)
 
 		if not res then return true end
 
@@ -321,13 +328,19 @@ function RageModule:PredictPosition(part, rootPart)
 	local pingTime = self.ping / 2
 	local dynamicTime = math.clamp(pingTime + travelTime, 0.05, 0.22)
 
-	local predictedPos = part.Position + (horizontalVelocity * dynamicTime * self.PREDICTION_STRENGTH)
-
-	return predictedPos
+	return part.Position + (horizontalVelocity * dynamicTime * self.PREDICTION_STRENGTH)
 end
 
 function RageModule:UpdateActivePlayersList()
 	table.clear(self.activePlayers)
+	local myPos
+	local myChar = self.player.Character
+	if myChar then
+		local h = myChar:FindFirstChild("Head")
+		if h then myPos = h.Position end
+	end
+	local maxDist = self:GetEffectiveMaxDist()
+
 	for _, targetPlayer in ipairs(self.Players:GetPlayers()) do
 		if targetPlayer ~= self.player and self:IsEnemy(targetPlayer) then
 			local targetChar = targetPlayer.Character
@@ -335,6 +348,9 @@ function RageModule:UpdateActivePlayersList()
 				local hum = targetChar:FindFirstChild("Humanoid")
 				local rootPart = targetChar:FindFirstChild("HumanoidRootPart")
 				if hum and hum.Health > 0 and rootPart then
+					if myPos and (rootPart.Position - myPos).Magnitude > maxDist then
+						continue
+					end
 					table.insert(self.activePlayers, {
 						player = targetPlayer,
 						character = targetChar,
@@ -362,12 +378,13 @@ function RageModule:FindTarget()
 
 	local bestTarget
 	local bestDist = self:GetEffectiveMaxDist()
+	local myPos = myHead.Position
 
 	for _, data in ipairs(self.activePlayers) do
 		if not data.humanoid or data.humanoid.Health <= 0 then continue end
 		if not data.rootPart or not data.rootPart.Parent then continue end
 
-		local dist = (data.rootPart.Position - myHead.Position).Magnitude
+		local dist = (data.rootPart.Position - myPos).Magnitude
 		if dist > bestDist then continue end
 
 		local part
@@ -398,16 +415,9 @@ function RageModule:FindTarget()
 			end
 
 		else
+			-- Fast visibility check: only 3 key parts instead of 9
 			local visible = false
-			for _, partName in ipairs({
-				"Head",
-				"UpperTorso",
-				"LowerTorso",
-				"Torso",
-				"HumanoidRootPart",
-				"LeftUpperArm","RightUpperArm",
-				"LeftUpperLeg","RightUpperLeg"
-				}) do
+			for _, partName in ipairs(self._VISIBILITY_FAST) do
 				local p = data.character:FindFirstChild(partName)
 				if p and self:IsPartVisible(p, data.character) then
 					visible = true
@@ -419,7 +429,7 @@ function RageModule:FindTarget()
 				continue
 			end
 
-			part = data.character:FindFirstChild("Head")
+			part = self:GetTargetPart(data.character, dist) or data.character:FindFirstChild("Head")
 			if not part then
 				continue
 			end
@@ -698,13 +708,14 @@ function RageModule:ReequipWeapon()
 	task.wait()
 	if ref and ref.Parent and hum and hum.Parent then
 		hum:EquipTool(ref)
+		self._cachedGun = nil
 		return true
 	end
 	return false
 end
 
 -- ============================================
--- RAPIDFIRE PUMP (single-call for event hooks)
+-- RAPIDFIRE PUMP (throttled)
 -- ============================================
 function RageModule:RapidFirePump()
 	if not self.RAPIDFIRE_ENABLED then return end
@@ -725,6 +736,7 @@ end
 function RageModule:Start()
 	self.player.CharacterAdded:Connect(function()
 		self.autoEquippedOnce = false
+		self._cachedGun = nil
 	end)
 
 	self.RunService.Heartbeat:Connect(function()
@@ -732,6 +744,11 @@ function RageModule:Start()
 
 		if not self.RAGE_ENABLED then return end
 		if not self:IsAlive() then return end
+
+		-- Throttle: skip if called faster than 60 fps
+		local now = tick()
+		if now - self._lastHeartbeat < self._HEARTBEAT_INTERVAL then return end
+		self._lastHeartbeat = now
 
 		local inAir = self:IsInAir()
 		self.AIRSHOT_ACTIVE = self.RAGE_NOSPREAD and inAir
@@ -747,43 +764,40 @@ function RageModule:Start()
 			return
 		end
 
-		local currentTime = tick()
-
 		if not self.RAPIDFIRE_ENABLED then
-			if currentTime - self.lastShot < gun.fireRate then return end
+			if now - self.lastShot < gun.fireRate then return end
 		end
 
-		if currentTime - self.lastPingUpdate >= self.PING_UPDATE_RATE then
-			self.lastPingUpdate = currentTime
+		if now - self.lastPingUpdate >= self.PING_UPDATE_RATE then
+			self.lastPingUpdate = now
 			self.ping = self.player:GetNetworkPing()
 		end
 
 		local target = self:FindTarget()
 
 		if not target and self.DOUBLETAP_ENABLED and self.DOUBLETAP_TELEPORT
-			and (currentTime - self.dtLastUse) >= self.DT_COOLDOWN then
+			and (now - self.dtLastUse) >= self.DT_COOLDOWN then
 			target = self:FindNearestEnemy()
 		end
 
 		if not target then return end
 
 		if self.RAGE_HITCHANCE_ENABLED and not self.AIRSHOT_ACTIVE then
-			local roll = math.random(1, 100)
-			if roll > self.RAGE_HITCHANCE then
+			if math.random(1, 100) > self.RAGE_HITCHANCE then
 				return
 			end
 		end
 
-		if self.DOUBLETAP_ENABLED and (currentTime - self.dtLastUse) >= self.DT_COOLDOWN then
-			self.dtLastUse = currentTime
-			self.lastShot = currentTime
+		if self.DOUBLETAP_ENABLED and (now - self.dtLastUse) >= self.DT_COOLDOWN then
+			self.dtLastUse = now
+			self.lastShot = now
 			task.spawn(function()
 				self:DoubleTapFire(gun, target)
 			end)
 			return
 		end
 
-		self.lastShot = currentTime
+		self.lastShot = now
 		self:FireWeapon(gun,
 			self.PREDICTION_ENABLED
 				and self:PredictPosition(target.targetPart, target.rootPart)
@@ -817,18 +831,7 @@ function RageModule:SetRapidfireEnabled(value)
 			Duration = 3
 		})
 
-		if self.RAPIDFIRE_MODE == "Automatic" then
-			self._rfSteppedConn = self.RunService.Stepped:Connect(function()
-				self:RapidFirePump()
-			end)
-
-			pcall(function()
-				self._rfRenderConn = self.RunService.RenderStepped:Connect(function()
-					self:RapidFirePump()
-				end)
-			end)
-		end
-
+		-- Only use the task loop for Automatic mode (no Stepped/RenderStepped spam)
 		if not self._rfLoopActive and self.RAPIDFIRE_MODE == "Automatic" then
 			self._rfLoopActive = true
 			task.spawn(function()
@@ -843,10 +846,11 @@ function RageModule:SetRapidfireEnabled(value)
 							end
 						end
 					end
-					if self.RAPIDFIRE_CYCLE_DELAY > 0 then
-						task.wait(self.RAPIDFIRE_CYCLE_DELAY)
+					local delay = self.RAPIDFIRE_CYCLE_DELAY
+					if delay > 0 then
+						task.wait(delay)
 					else
-						task.wait()
+						task.wait(0.03)
 					end
 				end
 				self._rfLoopActive = false

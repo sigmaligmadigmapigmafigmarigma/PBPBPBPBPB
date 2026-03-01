@@ -182,6 +182,37 @@ function World.new()
 	self._ttRoundConn = nil
 	self._ttDeathConn = nil
 
+	-- Weather
+	self.RAIN_ENABLED = false
+	self.RAIN_DENSITY = 50
+	self.RAIN_SPEED = 30
+	self._rainPart = nil
+	self._rainEmitter = nil
+
+	self.SNOW_ENABLED = false
+	self.SNOW_DENSITY = 40
+	self.SNOW_SPEED = 10
+	self._snowPart = nil
+	self._snowEmitter = nil
+
+	self.THUNDER_ENABLED = false
+	self.THUNDER_DENSITY = 50
+	self.THUNDER_SPEED = 30
+	self.THUNDER_FREQUENCY = 8
+	self._thunderPart = nil
+	self._thunderEmitter = nil
+	self._thunderConn = nil
+
+	self.FOG_ENABLED = false
+	self.FOG_START = 0
+	self.FOG_END = 500
+	self.FOG_COLOR = Color3.fromRGB(180, 180, 190)
+	self._origFog = {
+		FogStart = Lighting.FogStart,
+		FogEnd = Lighting.FogEnd,
+		FogColor = Lighting.FogColor,
+	}
+
 	self._unloadCallbacks = {}
 	self._connections = {}
 
@@ -788,6 +819,341 @@ function World:StopTrashtalk()
 end
 
 -- ═══════════════════════════════════════════════════
+--  Weather: Rain
+-- ═══════════════════════════════════════════════════
+
+function World:_createWeatherPart(name)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.CanCollide = false
+	part.Transparency = 1
+	part.Size = Vector3.new(200, 1, 200)
+	part.Parent = Workspace
+	return part
+end
+
+function World:_updateWeatherPartPos(part)
+	local cam = Workspace.CurrentCamera
+	if cam then
+		part.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 80, 0))
+	end
+end
+
+function World:SetRainEnabled(v)
+	self.RAIN_ENABLED = v
+	if v then
+		self:StartRain()
+	else
+		self:StopRain()
+	end
+end
+
+function World:SetRainDensity(v)
+	self.RAIN_DENSITY = v
+	if self._rainEmitter then
+		self._rainEmitter.Rate = v * 20
+	end
+end
+
+function World:SetRainSpeed(v)
+	self.RAIN_SPEED = v
+	if self._rainEmitter then
+		local sp = NumberRange.new(v, v + 10)
+		self._rainEmitter.Speed = sp
+	end
+end
+
+function World:StartRain()
+	self:StopRain()
+	local part = self:_createWeatherPart("ArcRain")
+	self._rainPart = part
+
+	local att = Instance.new("Attachment")
+	att.Parent = part
+
+	local pe = Instance.new("ParticleEmitter")
+	pe.Parent = att
+	pe.Texture = "rbxassetid://241876428"
+	pe.Rate = self.RAIN_DENSITY * 20
+	pe.Lifetime = NumberRange.new(0.8, 1.5)
+	pe.Speed = NumberRange.new(self.RAIN_SPEED, self.RAIN_SPEED + 10)
+	pe.SpreadAngle = Vector2.new(15, 15)
+	pe.Rotation = NumberRange.new(0, 0)
+	pe.RotSpeed = NumberRange.new(0, 0)
+	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(1, 0.02),
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(0.8, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pe.Color = ColorSequence.new(Color3.fromRGB(180, 200, 220))
+	pe.LightEmission = 0.05
+	pe.Drag = 0
+	self._rainEmitter = pe
+
+	local conn = RS.Heartbeat:Connect(function()
+		if part and part.Parent then
+			self:_updateWeatherPartPos(part)
+		end
+	end)
+	table.insert(self._connections, conn)
+end
+
+function World:StopRain()
+	if self._rainPart then
+		pcall(function() self._rainPart:Destroy() end)
+		self._rainPart = nil
+	end
+	self._rainEmitter = nil
+end
+
+-- ═══════════════════════════════════════════════════
+--  Weather: Snow
+-- ═══════════════════════════════════════════════════
+
+function World:SetSnowEnabled(v)
+	self.SNOW_ENABLED = v
+	if v then
+		self:StartSnow()
+	else
+		self:StopSnow()
+	end
+end
+
+function World:SetSnowDensity(v)
+	self.SNOW_DENSITY = v
+	if self._snowEmitter then
+		self._snowEmitter.Rate = v * 15
+	end
+end
+
+function World:SetSnowSpeed(v)
+	self.SNOW_SPEED = v
+	if self._snowEmitter then
+		self._snowEmitter.Speed = NumberRange.new(v, v + 5)
+	end
+end
+
+function World:StartSnow()
+	self:StopSnow()
+	local part = self:_createWeatherPart("ArcSnow")
+	self._snowPart = part
+
+	local att = Instance.new("Attachment")
+	att.Parent = part
+
+	local pe = Instance.new("ParticleEmitter")
+	pe.Parent = att
+	pe.Texture = "rbxassetid://241876428"
+	pe.Rate = self.SNOW_DENSITY * 15
+	pe.Lifetime = NumberRange.new(3, 6)
+	pe.Speed = NumberRange.new(self.SNOW_SPEED, self.SNOW_SPEED + 5)
+	pe.SpreadAngle = Vector2.new(40, 40)
+	pe.Rotation = NumberRange.new(0, 360)
+	pe.RotSpeed = NumberRange.new(-60, 60)
+	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0.5, 0.2),
+		NumberSequenceKeypoint.new(1, 0.1),
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(0.7, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pe.Color = ColorSequence.new(Color3.fromRGB(240, 245, 255))
+	pe.LightEmission = 0.15
+	pe.Drag = 3
+	self._snowEmitter = pe
+
+	local conn = RS.Heartbeat:Connect(function()
+		if part and part.Parent then
+			self:_updateWeatherPartPos(part)
+		end
+	end)
+	table.insert(self._connections, conn)
+end
+
+function World:StopSnow()
+	if self._snowPart then
+		pcall(function() self._snowPart:Destroy() end)
+		self._snowPart = nil
+	end
+	self._snowEmitter = nil
+end
+
+-- ═══════════════════════════════════════════════════
+--  Weather: Thunder
+-- ═══════════════════════════════════════════════════
+
+function World:SetThunderEnabled(v)
+	self.THUNDER_ENABLED = v
+	if v then
+		self:StartThunder()
+	else
+		self:StopThunder()
+	end
+end
+
+function World:SetThunderDensity(v)
+	self.THUNDER_DENSITY = v
+	if self._thunderEmitter then
+		self._thunderEmitter.Rate = v * 20
+	end
+end
+
+function World:SetThunderSpeed(v)
+	self.THUNDER_SPEED = v
+	if self._thunderEmitter then
+		self._thunderEmitter.Speed = NumberRange.new(v, v + 10)
+	end
+end
+
+function World:SetThunderFrequency(v)
+	self.THUNDER_FREQUENCY = v
+end
+
+function World:_flashLightning()
+	local origBrightness = Lighting.Brightness
+	local origAmbient = Lighting.Ambient
+
+	Lighting.Brightness = 8
+	Lighting.Ambient = Color3.fromRGB(200, 210, 255)
+
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://1907349676"
+	sound.Volume = 0.6
+	sound.PlayOnRemove = false
+	sound.Parent = Workspace
+	sound:Play()
+
+	task.delay(0.12, function()
+		TS:Create(Lighting, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Brightness = origBrightness,
+			Ambient = origAmbient,
+		}):Play()
+	end)
+	task.delay(3, function()
+		pcall(function() sound:Destroy() end)
+	end)
+end
+
+function World:StartThunder()
+	self:StopThunder()
+
+	local part = self:_createWeatherPart("ArcThunder")
+	self._thunderPart = part
+
+	local att = Instance.new("Attachment")
+	att.Parent = part
+
+	local pe = Instance.new("ParticleEmitter")
+	pe.Parent = att
+	pe.Texture = "rbxassetid://241876428"
+	pe.Rate = self.THUNDER_DENSITY * 20
+	pe.Lifetime = NumberRange.new(0.8, 1.5)
+	pe.Speed = NumberRange.new(self.THUNDER_SPEED, self.THUNDER_SPEED + 10)
+	pe.SpreadAngle = Vector2.new(15, 15)
+	pe.Rotation = NumberRange.new(0, 0)
+	pe.RotSpeed = NumberRange.new(0, 0)
+	pe.EmissionDirection = Enum.NormalId.Bottom
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(1, 0.02),
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(0.8, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pe.Color = ColorSequence.new(Color3.fromRGB(160, 175, 200))
+	pe.LightEmission = 0.05
+	pe.Drag = 0
+	self._thunderEmitter = pe
+
+	local posConn = RS.Heartbeat:Connect(function()
+		if part and part.Parent then
+			self:_updateWeatherPartPos(part)
+		end
+	end)
+	table.insert(self._connections, posConn)
+
+	task.spawn(function()
+		while self.THUNDER_ENABLED do
+			local interval = math.random(
+				math.max(2, self.THUNDER_FREQUENCY - 3),
+				self.THUNDER_FREQUENCY + 5
+			)
+			task.wait(interval)
+			if self.THUNDER_ENABLED then
+				self:_flashLightning()
+			end
+		end
+	end)
+end
+
+function World:StopThunder()
+	self.THUNDER_ENABLED = false
+	if self._thunderPart then
+		pcall(function() self._thunderPart:Destroy() end)
+		self._thunderPart = nil
+	end
+	self._thunderEmitter = nil
+end
+
+-- ═══════════════════════════════════════════════════
+--  Weather: Fog
+-- ═══════════════════════════════════════════════════
+
+function World:SetFogEnabled(v)
+	self.FOG_ENABLED = v
+	if v then
+		self:ApplyFog()
+	else
+		self:RemoveFog()
+	end
+end
+
+function World:SetFogStart(v)
+	self.FOG_START = v
+	if self.FOG_ENABLED then
+		Lighting.FogStart = v
+	end
+end
+
+function World:SetFogEnd(v)
+	self.FOG_END = v
+	if self.FOG_ENABLED then
+		Lighting.FogEnd = v
+	end
+end
+
+function World:SetFogColor(c)
+	self.FOG_COLOR = c
+	if self.FOG_ENABLED then
+		Lighting.FogColor = c
+	end
+end
+
+function World:ApplyFog()
+	Lighting.FogStart = self.FOG_START
+	Lighting.FogEnd = self.FOG_END
+	Lighting.FogColor = self.FOG_COLOR
+end
+
+function World:RemoveFog()
+	Lighting.FogStart = self._origFog.FogStart
+	Lighting.FogEnd = self._origFog.FogEnd
+	Lighting.FogColor = self._origFog.FogColor
+end
+
+-- ═══════════════════════════════════════════════════
 --  Unload
 -- ═══════════════════════════════════════════════════
 
@@ -801,6 +1167,10 @@ function World:Unload()
 	self:StopFly()
 	self:StopSpawnTp()
 	self:StopTrashtalk()
+	self:StopRain()
+	self:StopSnow()
+	self:StopThunder()
+	if self.FOG_ENABLED then self:RemoveFog() end
 
 	if self.BLUR_ENABLED and self._blurEffect then
 		self._blurEffect:Destroy()

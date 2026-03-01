@@ -322,9 +322,19 @@ function VisualsModule:PlayHitSound()
 		rust = "HitSfx22",
 	}
 
-	if self.HITSOUND_PRESET == "bell" then
+	local CUSTOM_SOUNDS = {
+		bell = "rbxassetid://7112391013",
+		["Apple Pay"] = "rbxassetid://82415663525492",
+		["Low Honour"] = "rbxassetid://116963486461562",
+		["Error"] = "rbxassetid://95509039020568",
+		["Fatality"] = "rbxassetid://138378419413244",
+		["Bite"] = "rbxassetid://100889026666638",
+		["Fart"] = "rbxassetid://84308809034758",
+	}
+
+	if CUSTOM_SOUNDS[self.HITSOUND_PRESET] then
 		local s = Instance.new("Sound")
-		s.SoundId = "rbxassetid://7112391013"
+		s.SoundId = CUSTOM_SOUNDS[self.HITSOUND_PRESET]
 		s.Volume = self.HITSOUND_VOLUME
 		s.Parent = self.SoundService
 		s:Play()
@@ -636,8 +646,8 @@ function VisualsModule:CreateHelixTracer(startPos, endPos)
 				TweenInfo.new(lifetime * 0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 				{Transparency = 1}
 			):Play()
-		end
-	end)
+			end
+		end)
 	self.Debris:AddItem(folder, lifetime + 0.8)
 end
 
@@ -761,8 +771,8 @@ function VisualsModule:CreateLightningTracer(startPos, endPos)
 			glow.Range = 6
 			glow.Brightness = 1
 			glow.Parent = seg
+			end
 		end
-	end
 
 	local lifetime = self.TRACER_LIFETIME * 0.7
 	task.delay(lifetime * 0.3, function()

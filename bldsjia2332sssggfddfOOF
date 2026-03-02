@@ -251,6 +251,11 @@ function World.new()
 		["The Boiled One"]  = {{}, {18580369062}, 1, 1, false, false, nil},
 	}
 
+	-- Viewmodel (first person weapon visibility)
+	self.VIEWMODEL_ENABLED = false
+	self._viewmodelConn = nil
+	self._viewmodelCharConn = nil
+
 	self._unloadCallbacks = {}
 	self._connections = {}
 
@@ -1219,6 +1224,84 @@ function World:RemoveFog()
 end
 
 -- ═══════════════════════════════════════════════════
+--  Viewmodel (First Person Weapon)
+-- ═══════════════════════════════════════════════════
+
+function World:SetViewmodelEnabled(v)
+	self.VIEWMODEL_ENABLED = v
+	if v then
+		self:StartViewmodel()
+	else
+		self:StopViewmodel()
+	end
+end
+
+function World:StartViewmodel()
+	self:StopViewmodel()
+
+	local function hookCharacter(char)
+		if not char then return end
+
+		if self._viewmodelConn then
+			self._viewmodelConn:Disconnect()
+			self._viewmodelConn = nil
+		end
+
+		self._viewmodelConn = RS.RenderStepped:Connect(function()
+			if not self.VIEWMODEL_ENABLED then return end
+			if not char or not char.Parent then return end
+
+			local tool = char:FindFirstChildOfClass("Tool")
+			if tool then
+				for _, part in ipairs(tool:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.LocalTransparencyModifier = 0
+					end
+				end
+			end
+
+			local armNames = {
+				"Right Arm", "Left Arm",
+				"RightHand", "LeftHand",
+				"RightLowerArm", "LeftLowerArm",
+				"RightUpperArm", "LeftUpperArm",
+			}
+			for _, name in ipairs(armNames) do
+				local part = char:FindFirstChild(name)
+				if part and part:IsA("BasePart") then
+					part.LocalTransparencyModifier = 0
+				end
+			end
+		end)
+	end
+
+	if self._viewmodelCharConn then
+		self._viewmodelCharConn:Disconnect()
+		self._viewmodelCharConn = nil
+	end
+
+	self._viewmodelCharConn = player.CharacterAdded:Connect(function(char)
+		task.wait(0.5)
+		hookCharacter(char)
+	end)
+
+	if player.Character then
+		hookCharacter(player.Character)
+	end
+end
+
+function World:StopViewmodel()
+	if self._viewmodelConn then
+		self._viewmodelConn:Disconnect()
+		self._viewmodelConn = nil
+	end
+	if self._viewmodelCharConn then
+		self._viewmodelCharConn:Disconnect()
+		self._viewmodelCharConn = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════
 --  Model Changer
 -- ═══════════════════════════════════════════════════
 
@@ -1367,6 +1450,7 @@ function World:Unload()
 	self:StopBhop()
 	self:StopNoclip()
 	self:StopFly()
+	self:StopViewmodel()
 	self:StopSpawnTp()
 	self:StopTrashtalk()
 	self:StopRain()

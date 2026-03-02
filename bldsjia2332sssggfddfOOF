@@ -1239,13 +1239,88 @@ end
 function World:StartViewmodel()
 	self:StopViewmodel()
 
-	local camera = Workspace.CurrentCamera
+	local ARM_SCALE = 0.55
+	local ARM_OFFSET = CFrame.new(0, -0.6, 0.3)
 
 	local armParts = {
-		["RightHand"] = true, ["LeftHand"] = true,
-		["RightLowerArm"] = true, ["LeftLowerArm"] = true,
+		RightHand = true, LeftHand = true,
+		RightLowerArm = true, LeftLowerArm = true,
 		["Right Arm"] = true, ["Left Arm"] = true,
 	}
+
+	local cachedArms = {}
+	local cachedToolParts = {}
+	local cachedCamParts = {}
+	local lastToolRef = nil
+	local lastCamCount = 0
+	local origScales = {}
+
+	local function cacheArms(char)
+		cachedArms = {}
+		for _, desc in ipairs(char:GetDescendants()) do
+			if desc:IsA("BasePart") and armParts[desc.Name] then
+				cachedArms[#cachedArms + 1] = desc
+			end
+		end
+	end
+
+	local function cacheToolParts(char)
+		cachedToolParts = {}
+		lastToolRef = nil
+		for _, child in ipairs(char:GetChildren()) do
+			if child:IsA("Tool") then
+				lastToolRef = child
+				for _, part in ipairs(child:GetDescendants()) do
+					if part:IsA("BasePart") then
+						cachedToolParts[#cachedToolParts + 1] = part
+					end
+				end
+				break
+			end
+		end
+	end
+
+	local function cacheCamParts()
+		cachedCamParts = {}
+		local cam = Workspace.CurrentCamera
+		if not cam then return end
+		lastCamCount = #cam:GetChildren()
+		for _, child in ipairs(cam:GetChildren()) do
+			if child:IsA("Model") or child:IsA("BasePart") or child:IsA("Tool") then
+				if child:IsA("BasePart") then
+					cachedCamParts[#cachedCamParts + 1] = child
+				end
+				for _, part in ipairs(child:GetDescendants()) do
+					if part:IsA("BasePart") then
+						cachedCamParts[#cachedCamParts + 1] = part
+					end
+				end
+			end
+		end
+	end
+
+	local function applyArmScale(char)
+		for _, name in ipairs({"RightHand", "LeftHand", "RightLowerArm", "LeftLowerArm"}) do
+			local part = char:FindFirstChild(name)
+			if part and part:IsA("BasePart") then
+				if not origScales[name] then
+					origScales[name] = part.Size
+				end
+				part.Size = origScales[name] * ARM_SCALE
+			end
+		end
+	end
+
+	local function restoreArmScale(char)
+		if not char then return end
+		for name, size in pairs(origScales) do
+			local part = char:FindFirstChild(name)
+			if part and part:IsA("BasePart") then
+				part.Size = size
+			end
+		end
+		origScales = {}
+	end
 
 	local function hookCharacter(char)
 		if not char then return end
@@ -1258,57 +1333,62 @@ function World:StartViewmodel()
 		local hum = char:WaitForChild("Humanoid", 5)
 		if not hum then return end
 
+		cacheArms(char)
+		cacheToolParts(char)
+		cacheCamParts()
+
+		if hum.CameraOffset.Magnitude < 0.01 then
+			hum.CameraOffset = Vector3.new(0, -0.4, 0)
+		end
+
 		self._viewmodelConn = RS.RenderStepped:Connect(function()
 			if not self.VIEWMODEL_ENABLED then return end
 			if not char or not char.Parent then return end
 
-			for _, desc in ipairs(char:GetDescendants()) do
-				if desc:IsA("BasePart") and armParts[desc.Name] then
-					desc.LocalTransparencyModifier = 0
+			for i = 1, #cachedArms do
+				local p = cachedArms[i]
+				if p and p.Parent then
+					p.LocalTransparencyModifier = 0
 				end
 			end
 
-			for _, child in ipairs(char:GetChildren()) do
-				if child:IsA("Tool") then
-					for _, part in ipairs(child:GetDescendants()) do
-						if part:IsA("BasePart") then
-							part.LocalTransparencyModifier = 0
-							if part.Transparency >= 0.9 then
-								part.Transparency = 0
-							end
-						end
+			local curTool = char:FindFirstChildOfClass("Tool")
+			if curTool ~= lastToolRef then
+				cacheToolParts(char)
+			end
+			for i = 1, #cachedToolParts do
+				local p = cachedToolParts[i]
+				if p and p.Parent then
+					p.LocalTransparencyModifier = 0
+					if p.Transparency >= 0.9 then
+						p.Transparency = 0
 					end
 				end
 			end
 
 			local cam = Workspace.CurrentCamera
 			if cam then
-				for _, child in ipairs(cam:GetChildren()) do
-					if child:IsA("Model") or child:IsA("BasePart") or child:IsA("Tool") then
-						for _, part in ipairs(child:GetDescendants()) do
-							if part:IsA("BasePart") then
-								part.LocalTransparencyModifier = 0
-								if part.Transparency >= 0.9 then
-									part.Transparency = 0
-								end
-							end
-						end
-						if child:IsA("BasePart") then
-							child.LocalTransparencyModifier = 0
-							if child.Transparency >= 0.9 then
-								child.Transparency = 0
-							end
+				local cc = #cam:GetChildren()
+				if cc ~= lastCamCount then
+					cacheCamParts()
+				end
+				for i = 1, #cachedCamParts do
+					local p = cachedCamParts[i]
+					if p and p.Parent then
+						p.LocalTransparencyModifier = 0
+						if p.Transparency >= 0.9 then
+							p.Transparency = 0
 						end
 					end
 				end
 			end
 
 			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp and hum and cam then
-				local camLook = cam.CFrame.LookVector
-				local flatLook = Vector3.new(camLook.X, 0, camLook.Z)
-				if flatLook.Magnitude > 0.01 then
-					hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flatLook.Unit)
+			if hrp and cam then
+				local lv = cam.CFrame.LookVector
+				local flat = Vector3.new(lv.X, 0, lv.Z)
+				if flat.Magnitude > 0.01 then
+					hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flat.Unit)
 				end
 			end
 		end)
@@ -1321,6 +1401,7 @@ function World:StartViewmodel()
 
 	self._viewmodelCharConn = player.CharacterAdded:Connect(function(char)
 		task.wait(0.5)
+		origScales = {}
 		hookCharacter(char)
 	end)
 
@@ -1337,6 +1418,13 @@ function World:StopViewmodel()
 	if self._viewmodelCharConn then
 		self._viewmodelCharConn:Disconnect()
 		self._viewmodelCharConn = nil
+	end
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.CameraOffset = Vector3.new(0, 0, 0)
+		end
 	end
 end
 

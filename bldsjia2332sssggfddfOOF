@@ -1239,6 +1239,14 @@ end
 function World:StartViewmodel()
 	self:StopViewmodel()
 
+	local camera = Workspace.CurrentCamera
+
+	local visibleParts = {
+		["RightHand"] = true, ["LeftHand"] = true,
+		["RightLowerArm"] = true, ["LeftLowerArm"] = true,
+		["Right Arm"] = true, ["Left Arm"] = true,
+	}
+
 	local function hookCharacter(char)
 		if not char then return end
 
@@ -1247,29 +1255,52 @@ function World:StartViewmodel()
 			self._viewmodelConn = nil
 		end
 
+		local hum = char:WaitForChild("Humanoid", 5)
+		if not hum then return end
+
+		local savedAutoRotate = hum.AutoRotate
+
 		self._viewmodelConn = RS.RenderStepped:Connect(function()
 			if not self.VIEWMODEL_ENABLED then return end
 			if not char or not char.Parent then return end
 
-			local tool = char:FindFirstChildOfClass("Tool")
-			if tool then
-				for _, part in ipairs(tool:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.LocalTransparencyModifier = 0
+			for _, desc in ipairs(char:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					if visibleParts[desc.Name] then
+						desc.LocalTransparencyModifier = 0
 					end
 				end
 			end
 
-			local armNames = {
-				"Right Arm", "Left Arm",
-				"RightHand", "LeftHand",
-				"RightLowerArm", "LeftLowerArm",
-				"RightUpperArm", "LeftUpperArm",
-			}
-			for _, name in ipairs(armNames) do
-				local part = char:FindFirstChild(name)
-				if part and part:IsA("BasePart") then
-					part.LocalTransparencyModifier = 0
+			for _, child in ipairs(char:GetChildren()) do
+				if child:IsA("Tool") or child:IsA("Model") then
+					for _, part in ipairs(child:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.LocalTransparencyModifier = 0
+						end
+					end
+				end
+			end
+
+			local backpack = player:FindFirstChild("Backpack")
+			if backpack then
+				for _, tool in ipairs(backpack:GetChildren()) do
+					if tool:IsA("Tool") then
+						for _, part in ipairs(tool:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.LocalTransparencyModifier = 0
+							end
+						end
+					end
+				end
+			end
+
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp and hum and camera then
+				local camLook = camera.CFrame.LookVector
+				local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
+				if flatLook.Magnitude > 0.01 then
+					hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flatLook)
 				end
 			end
 		end)

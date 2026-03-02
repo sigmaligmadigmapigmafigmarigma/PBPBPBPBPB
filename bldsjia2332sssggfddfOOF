@@ -255,7 +255,6 @@ function World.new()
 	self.VIEWMODEL_ENABLED = false
 	self._viewmodelConn = nil
 	self._viewmodelCharConn = nil
-	self._crosshairGui = nil
 
 	self._unloadCallbacks = {}
 	self._connections = {}
@@ -1237,69 +1236,8 @@ function World:SetViewmodelEnabled(v)
 	end
 end
 
-function World:_createCrosshair()
-	if self._crosshairGui then self._crosshairGui:Destroy() end
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "_ArcCrosshair"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 999
-
-	pcall(function()
-		if syn and syn.protect_gui then syn.protect_gui(gui)
-		elseif gethui then gui.Parent = gethui()
-		end
-	end)
-	if not gui.Parent then
-		gui.Parent = game:GetService("CoreGui")
-	end
-
-	local center = Instance.new("Frame")
-	center.Name = "Center"
-	center.AnchorPoint = Vector2.new(0.5, 0.5)
-	center.Position = UDim2.new(0.5, 0, 0.5, 0)
-	center.Size = UDim2.new(0, 2, 0, 2)
-	center.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	center.BorderSizePixel = 0
-	center.Parent = gui
-	Instance.new("UICorner", center).CornerRadius = UDim.new(1, 0)
-
-	local lineData = {
-		{0, -8, 1, 6},
-		{0, 4, 1, 6},
-		{-8, 0, 6, 1},
-		{4, 0, 6, 1},
-	}
-	for _, d in ipairs(lineData) do
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position = UDim2.new(0.5, d[1], 0.5, d[2])
-		line.Size = UDim2.new(0, d[3], 0, d[4])
-		line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		line.BorderSizePixel = 0
-		line.Parent = gui
-
-		local outline = Instance.new("UIStroke")
-		outline.Color = Color3.fromRGB(0, 0, 0)
-		outline.Thickness = 1
-		outline.Transparency = 0.3
-		outline.Parent = line
-	end
-
-	self._crosshairGui = gui
-end
-
-function World:_destroyCrosshair()
-	if self._crosshairGui then
-		self._crosshairGui:Destroy()
-		self._crosshairGui = nil
-	end
-end
-
 function World:StartViewmodel()
 	self:StopViewmodel()
-	self:_createCrosshair()
 
 	local armSet = {
 		RightHand = true, LeftHand = true,
@@ -1428,7 +1366,6 @@ end
 function World:StopViewmodel()
 	if self._viewmodelConn then self._viewmodelConn:Disconnect(); self._viewmodelConn = nil end
 	if self._viewmodelCharConn then self._viewmodelCharConn:Disconnect(); self._viewmodelCharConn = nil end
-	self:_destroyCrosshair()
 	local char = player.Character
 	if char then
 		local hum = char:FindFirstChildOfClass("Humanoid")

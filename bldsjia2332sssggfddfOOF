@@ -1239,192 +1239,136 @@ end
 function World:StartViewmodel()
 	self:StopViewmodel()
 
-	local ARM_SCALE = 0.55
-	local ARM_OFFSET = CFrame.new(0, -0.6, 0.3)
-
-	local armParts = {
+	local armSet = {
 		RightHand = true, LeftHand = true,
 		RightLowerArm = true, LeftLowerArm = true,
 		["Right Arm"] = true, ["Left Arm"] = true,
 	}
 
-	local cachedArms = {}
-	local cachedToolParts = {}
-	local cachedCamParts = {}
-	local lastToolRef = nil
-	local lastCamCount = 0
-	local origScales = {}
+	local arms, toolParts, camParts = {}, {}, {}
+	local toolRef, camVer = nil, 0
+	local frame = 0
 
-	local function cacheArms(char)
-		cachedArms = {}
-		for _, desc in ipairs(char:GetDescendants()) do
-			if desc:IsA("BasePart") and armParts[desc.Name] then
-				cachedArms[#cachedArms + 1] = desc
+	local function rebuildArms(char)
+		arms = {}
+		local n = 0
+		for _, d in ipairs(char:GetChildren()) do
+			if d:IsA("BasePart") and armSet[d.Name] then
+				n = n + 1; arms[n] = d
 			end
 		end
 	end
 
-	local function cacheToolParts(char)
-		cachedToolParts = {}
-		lastToolRef = nil
-		for _, child in ipairs(char:GetChildren()) do
-			if child:IsA("Tool") then
-				lastToolRef = child
-				for _, part in ipairs(child:GetDescendants()) do
-					if part:IsA("BasePart") then
-						cachedToolParts[#cachedToolParts + 1] = part
+	local function rebuildTool(char)
+		toolParts = {}
+		toolRef = nil
+		for _, c in ipairs(char:GetChildren()) do
+			if c:IsA("Tool") then
+				toolRef = c
+				local n = 0
+				for _, p in ipairs(c:GetDescendants()) do
+					if p:IsA("BasePart") then
+						n = n + 1; toolParts[n] = p
 					end
 				end
-				break
+				return
 			end
 		end
 	end
 
-	local function cacheCamParts()
-		cachedCamParts = {}
+	local function rebuildCam()
+		camParts = {}
 		local cam = Workspace.CurrentCamera
 		if not cam then return end
-		lastCamCount = #cam:GetChildren()
-		for _, child in ipairs(cam:GetChildren()) do
-			if child:IsA("Model") or child:IsA("BasePart") or child:IsA("Tool") then
-				if child:IsA("BasePart") then
-					cachedCamParts[#cachedCamParts + 1] = child
-				end
-				for _, part in ipairs(child:GetDescendants()) do
-					if part:IsA("BasePart") then
-						cachedCamParts[#cachedCamParts + 1] = part
-					end
+		camVer = #cam:GetChildren()
+		local n = 0
+		for _, c in ipairs(cam:GetChildren()) do
+			if c:IsA("Model") or c:IsA("BasePart") or c:IsA("Tool") then
+				if c:IsA("BasePart") then n = n + 1; camParts[n] = c end
+				for _, p in ipairs(c:GetDescendants()) do
+					if p:IsA("BasePart") then n = n + 1; camParts[n] = p end
 				end
 			end
 		end
-	end
-
-	local function applyArmScale(char)
-		for _, name in ipairs({"RightHand", "LeftHand", "RightLowerArm", "LeftLowerArm"}) do
-			local part = char:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				if not origScales[name] then
-					origScales[name] = part.Size
-				end
-				part.Size = origScales[name] * ARM_SCALE
-			end
-		end
-	end
-
-	local function restoreArmScale(char)
-		if not char then return end
-		for name, size in pairs(origScales) do
-			local part = char:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				part.Size = size
-			end
-		end
-		origScales = {}
 	end
 
 	local function hookCharacter(char)
 		if not char then return end
-
-		if self._viewmodelConn then
-			self._viewmodelConn:Disconnect()
-			self._viewmodelConn = nil
-		end
+		if self._viewmodelConn then self._viewmodelConn:Disconnect(); self._viewmodelConn = nil end
 
 		local hum = char:WaitForChild("Humanoid", 5)
 		if not hum then return end
 
-		cacheArms(char)
-		cacheToolParts(char)
-		cacheCamParts()
+		rebuildArms(char)
+		rebuildTool(char)
+		rebuildCam()
+		frame = 0
 
-		if hum.CameraOffset.Magnitude < 0.01 then
-			hum.CameraOffset = Vector3.new(0, -0.4, 0)
-		end
+		hum.CameraOffset = Vector3.new(0, 1.0, 0)
 
 		self._viewmodelConn = RS.RenderStepped:Connect(function()
-			if not self.VIEWMODEL_ENABLED then return end
-			if not char or not char.Parent then return end
+			if not self.VIEWMODEL_ENABLED or not char.Parent then return end
 
-			for i = 1, #cachedArms do
-				local p = cachedArms[i]
-				if p and p.Parent then
+			frame = frame + 1
+
+			for i = 1, #arms do
+				local p = arms[i]
+				if p.Parent then p.LocalTransparencyModifier = 0 end
+			end
+
+			local ct = char:FindFirstChildOfClass("Tool")
+			if ct ~= toolRef then rebuildTool(char) end
+			for i = 1, #toolParts do
+				local p = toolParts[i]
+				if p.Parent then
 					p.LocalTransparencyModifier = 0
+					if p.Transparency > 0.5 then p.Transparency = 0 end
 				end
 			end
 
-			local curTool = char:FindFirstChildOfClass("Tool")
-			if curTool ~= lastToolRef then
-				cacheToolParts(char)
-			end
-			for i = 1, #cachedToolParts do
-				local p = cachedToolParts[i]
-				if p and p.Parent then
-					p.LocalTransparencyModifier = 0
-					if p.Transparency >= 0.9 then
-						p.Transparency = 0
-					end
-				end
-			end
-
-			local cam = Workspace.CurrentCamera
-			if cam then
-				local cc = #cam:GetChildren()
-				if cc ~= lastCamCount then
-					cacheCamParts()
-				end
-				for i = 1, #cachedCamParts do
-					local p = cachedCamParts[i]
-					if p and p.Parent then
+			if frame % 5 == 0 then
+				local cam = Workspace.CurrentCamera
+				if cam and #cam:GetChildren() ~= camVer then rebuildCam() end
+				for i = 1, #camParts do
+					local p = camParts[i]
+					if p.Parent then
 						p.LocalTransparencyModifier = 0
-						if p.Transparency >= 0.9 then
-							p.Transparency = 0
-						end
+						if p.Transparency > 0.5 then p.Transparency = 0 end
 					end
 				end
 			end
 
 			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp and cam then
-				local lv = cam.CFrame.LookVector
-				local flat = Vector3.new(lv.X, 0, lv.Z)
-				if flat.Magnitude > 0.01 then
-					hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flat.Unit)
+			if hrp then
+				local cam = Workspace.CurrentCamera
+				if cam then
+					local lv = cam.CFrame.LookVector
+					local flat = Vector3.new(lv.X, 0, lv.Z)
+					if flat.Magnitude > 0.01 then
+						hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flat.Unit)
+					end
 				end
 			end
 		end)
 	end
 
-	if self._viewmodelCharConn then
-		self._viewmodelCharConn:Disconnect()
-		self._viewmodelCharConn = nil
-	end
+	if self._viewmodelCharConn then self._viewmodelCharConn:Disconnect(); self._viewmodelCharConn = nil end
 
 	self._viewmodelCharConn = player.CharacterAdded:Connect(function(char)
 		task.wait(0.5)
-		origScales = {}
 		hookCharacter(char)
 	end)
 
-	if player.Character then
-		hookCharacter(player.Character)
-	end
+	if player.Character then hookCharacter(player.Character) end
 end
 
 function World:StopViewmodel()
-	if self._viewmodelConn then
-		self._viewmodelConn:Disconnect()
-		self._viewmodelConn = nil
-	end
-	if self._viewmodelCharConn then
-		self._viewmodelCharConn:Disconnect()
-		self._viewmodelCharConn = nil
-	end
+	if self._viewmodelConn then self._viewmodelConn:Disconnect(); self._viewmodelConn = nil end
+	if self._viewmodelCharConn then self._viewmodelCharConn:Disconnect(); self._viewmodelCharConn = nil end
 	local char = player.Character
 	if char then
 		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.CameraOffset = Vector3.new(0, 0, 0)
-		end
+		if hum then hum.CameraOffset = Vector3.new(0, 0, 0) end
 	end
 end
 

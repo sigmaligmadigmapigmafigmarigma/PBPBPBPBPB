@@ -1,8 +1,3 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║            ARCANUM NEXTGEN  •  ESP MODULE  (Optimized v2)  ║
--- ║          Drawing API  •  Highlight Chams  •  Backtrack     ║
--- ╚══════════════════════════════════════════════════════════════╝
-
 local ESPModule = {}
 ESPModule.__index = ESPModule
 
@@ -624,6 +619,12 @@ function ESPModule:CreateGhost(char)
 end
 
 function ESPModule:UpdateBacktrack(d, char, root, targetPlayer)
+    if not root or not root.Parent then
+        if d.btGhost then d.btGhost.Parent = nil end
+        if d.btHighlight then d.btHighlight.Enabled = false end
+        return
+    end
+
     local shouldShow = self.BACKTRACK_ENABLED
     if shouldShow and self.TEAM_CHECK and self:IsTeammate(targetPlayer) then
         shouldShow = false

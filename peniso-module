@@ -15,7 +15,7 @@ function RageModule.new(config)
 
 	self.RAGE_ENABLED = false
 	self.RAGE_HITPART = "Head"
-	self.RAGE_HITCHANCE = 100
+	self.RAGE_HITCHANCE = 0
 	self.RAGE_HITCHANCE_ENABLED = false
 	self.RAGE_AUTOSHOOT = false
 	self.RAGE_NOSPREAD = false
@@ -24,7 +24,7 @@ function RageModule.new(config)
 	self.MAX_DISTANCE = 1000
 
 	self.PREDICTION_ENABLED = true
-	self.PREDICTION_STRENGTH = 1.2
+	self.PREDICTION_STRENGTH = 3
 	self.BULLET_SPEED = 800
 
 	self.MIN_DAMAGE_ENABLED = false
